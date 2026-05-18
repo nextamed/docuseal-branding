@@ -1,0 +1,20 @@
+<%#
+  OKorn-Override des DocuSeal-Inline-SVG-Logos.
+  Upstream: app/views/shared/_logo.html.erb (Inline-SVG, color #e97a42, 180x180 viewBox).
+  Wird von 7 Stellen gerendert (start_form, submit_form, templates_share_link_qr,
+  submissions, templates_uploads, shared/_title, pages/landing).
+
+  Lokale Assigns aus Callern:
+    - :class  -> Tailwind-Klasse (z.B. 'w-9 h-9 md:w-12 md:h-12')
+    - :width  -> HTML/CSS-Groesse (z.B. '50px')
+    - :height -> HTML/CSS-Groesse
+%>
+<%
+  inline_size = ''
+  if local_assigns[:width] || local_assigns[:height]
+    w = local_assigns.fetch(:width, '37px')
+    h = local_assigns.fetch(:height, '37px')
+    inline_size = "width: #{w}; height: #{h};"
+  end
+%>
+<img src="/logo.png" alt="OKorn Immobilien" class="<%= local_assigns[:class] %>" style="<%= inline_size %> object-fit: contain;" />

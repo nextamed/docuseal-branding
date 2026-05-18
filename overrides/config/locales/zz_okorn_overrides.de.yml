@@ -1,0 +1,20 @@
+# OKorn-Override: deutsche DocuSeal-Locale anpassen.
+#
+# Rails laedt config/locales/*.yml alphabetisch, last-write-wins.
+# `zz_`-Prefix garantiert, dass diese Datei NACH config/locales/i18n.yml geladen wird.
+#
+# Geaenderter Key:
+#   `powered_by`: "Bereitgestellt von" -> "Erstellt mit"
+#
+# Email-Attribution (`sent_using_product_name_*_html`) bleibt zunaechst original
+# (gehoert in Phase 2/3 der OKorn-Signing-Plattform).
+#
+# Verifiziert: DocuSeal customizt I18n.load_path nicht (kein Setup in
+# config/application.rb, keine locale.rb/i18n.rb in config/initializers/).
+# Siehe ok_manage/Ideen/SPEC_DOCUSEAL_OKORN_PHASE_1.md §10.1.
+
+de:
+  powered_by: "Erstellt mit"
+
+de-DE:
+  powered_by: "Erstellt mit"

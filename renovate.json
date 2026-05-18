@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests"
+  ],
+  "labels": ["dependencies", "docuseal-upstream"],
+  "schedule": ["before 5am on monday"],
+  "packageRules": [
+    {
+      "matchPackageNames": ["docuseal/docuseal"],
+      "commitMessageTopic": "DocuSeal upstream",
+      "groupName": "DocuSeal",
+      "prBodyNotes": [
+        "Vor dem Merge pruefen: hat DocuSeal Pfade in `app/views/start_form/`, `app/views/submit_form/`, `app/views/templates_share_link_qr/`, `app/views/shared/_logo.html.erb` oder `config/locales/i18n.yml` (Key `powered_by`) geaendert? Diese sind unsere Override-Targets."
+      ]
+    }
+  ]
+}
