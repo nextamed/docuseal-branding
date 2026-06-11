@@ -15,6 +15,7 @@ DocuSeal OSS wird unveraendert als Basis-Image (`docuseal/docuseal:latest`) verw
    - `submit_form/_docuseal_logo.html.erb`
    - `templates_share_link_qr/_logo.html.erb`
 3. **i18n-Override** (`overrides/config/locales/zz_okorn_overrides.de.yml`) — aendert deutschen `powered_by`-Wert von „Bereitgestellt von" zu „Erstellt mit".
+4. **Button-Loesung § 312j Abs. 3 BGB** (`overrides/app/views/submit_form/show.html.erb`) — Full-File-Override der Hosted-Form-View (Basis: Upstream-Tag, siehe Kommentar-Block am Dateiende). Wenn der Submitter beim API-Erstellen die Metadata `payment_notice` traegt (setzt ok_manage bei zahlungs-/provisionspflichtigen Vertraegen, Feature 023), schreibt ein MutationObserver-Snippet den finalen Abschluss-Button (`#submit_form_button`) und die E-Signatur-Einwilligungszeile um auf „Zahlungspflichtig / provisionspflichtig abschließen". Vorgaenge ohne diese Metadata bleiben unveraendert. Hintergrund: Embedded Components sind bei selfhosted DocuSeal Pro-only; dieses Override patcht stattdessen die OSS-Hosted-Form. Details: ok_manage-Spec `023-docuseal-signing-slice`.
 
 **Explizit NICHT geaendert** (Lizenz-Compliance, AGPLv3 + Section 7(b) Attribution):
 
@@ -51,6 +52,10 @@ Beim ersten Push erstellt GHCR das Package als **private**. Damit Coolify ohne P
    - `app/views/submit_form/_docuseal_logo.html.erb`
    - `app/views/templates_share_link_qr/_logo.html.erb`
    - `config/locales/i18n.yml` (Key `powered_by` in `de:`-Section)
+   - `app/views/submit_form/show.html.erb` — **Full-File-Override!** Bei jedem Upstream-Bump: Datei vom neuen Tag frisch ziehen (`gh api "repos/docusealco/docuseal/contents/app/views/submit_form/show.html.erb?ref=<TAG>" --jq .content | base64 -d`) und den `OKorn-Override`-Block vom Dateiende wieder anhaengen.
+   - `app/javascript/submission_form/form.vue` — existiert `#submit_form_button` noch?
+   - `app/javascript/submission_form/i18n.js` — Keys `sign_and_complete` / `complete` unveraendert?
+   - `app/javascript/submission_form/signature_step.vue` — Disclosure-Zeile enthaelt weiterhin den `esign-disclosure`-Link?
 3. Falls Pfade umbenannt: Override-File-Namen im `overrides/`-Tree mitziehen.
 4. **PR mergen** -> GH-Action baut neues Image -> Renovate-Branch geschlossen.
 5. **Coolify-Cutover** (siehe unten).

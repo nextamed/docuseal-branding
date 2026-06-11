@@ -12,7 +12,8 @@
       "commitMessageTopic": "DocuSeal upstream",
       "groupName": "DocuSeal",
       "prBodyNotes": [
-        "Vor dem Merge pruefen: hat DocuSeal Pfade in `app/views/start_form/`, `app/views/submit_form/`, `app/views/templates_share_link_qr/`, `app/views/shared/_logo.html.erb` oder `config/locales/i18n.yml` (Key `powered_by`) geaendert? Diese sind unsere Override-Targets."
+        "Vor dem Merge pruefen: hat DocuSeal Pfade in `app/views/start_form/`, `app/views/submit_form/`, `app/views/templates_share_link_qr/`, `app/views/shared/_logo.html.erb` oder `config/locales/i18n.yml` (Key `powered_by`) geaendert? Diese sind unsere Override-Targets.",
+        "Full-File-Override `app/views/submit_form/show.html.erb` (Button-Loesung 312j): Datei vom neuen Tag frisch ziehen und OKorn-Block wieder anhaengen; zusaetzlich `#submit_form_button` in form.vue und i18n-Keys `sign_and_complete`/`complete` pruefen (Checkliste im README)."
       ]
     }
   ]
