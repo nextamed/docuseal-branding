@@ -1,0 +1,30 @@
+<%# OKorn-Override (github.com/nextamed/docuseal-branding): neutrale Startseite
+    statt DocuSeal-Produkt-Marketing. Empfaenger landen hier nur, wenn sie die
+    Domain direkt aufrufen — die eigentlichen Signier-Links zeigen auf
+    /s/<slug>. Die AGPL-Attribution am Seitenende bleibt unangetastet
+    (render 'shared/attribution'). Upstream-Basis: 3.0.3. %>
+<section class="flex items-center justify-center">
+  <div class="py-16 mx-auto max-w-3xl px-4">
+    <div class="text-center">
+      <div class="relative flex flex-col items-center">
+        <%= render 'shared/logo', width: '100', height: '100' %>
+        <h1 class="text-5xl font-bold mt-6 mb-2">
+          Signatur-Plattform
+        </h1>
+        <h2 class="text-2xl font-semibold" style="color: #bd9432;">
+          OKorn Immobilien
+        </h2>
+      </div>
+      <p class="mt-10 mb-4 text-lg text-gray-600">
+        Hier unterschreiben Sie Dokumente der OKorn Immobilien sicher und digital —
+        zum Beispiel Mietvertraege, Uebergabeprotokolle oder Kaufabsichtserklaerungen.
+      </p>
+      <p class="text-base text-gray-500">
+        Sie haben einen Signier-Link erhalten? Oeffnen Sie ihn einfach direkt —
+        eine Anmeldung ist nicht erforderlich. Bei Fragen wenden Sie sich gerne an
+        OKorn Immobilien.
+      </p>
+    </div>
+  </div>
+</section>
+<%= render 'shared/attribution', with_counter: true %>
