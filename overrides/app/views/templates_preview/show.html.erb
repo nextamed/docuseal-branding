@@ -1,0 +1,17 @@
+<template-builder class="grid" data-editable="false" data-with-sign-yourself-button="<%= !@template.archived_at? %>" data-with-send-button="<%= !@template.archived_at? && can?(:create, @template.submissions.new(account: current_account)) %>" data-template="<%= @template_data.to_json %>"></template-builder>
+
+<%# OKorn-Override (github.com/nextamed/docuseal-branding): Das Builder-Logo
+    kommt aus dem JS-Bundle (template_builder/logo.vue, Inline-SVG 40x40) und
+    ist nicht per View-Partial overridebar. CSS-Swap: SVG ausblenden, OKorn-
+    Logo als Hintergrund des umgebenden <a href="/">. Nach DocuSeal-Updates
+    pruefen: builder.vue rendert weiterhin <a href="/"><Logo/></a>. %>
+<style nonce="<%= content_security_policy_nonce %>">
+  template-builder a[href="/"] svg { display: none; }
+  template-builder a[href="/"] {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    background: url("/logo.png") center / contain no-repeat;
+    flex-shrink: 0;
+  }
+</style>
