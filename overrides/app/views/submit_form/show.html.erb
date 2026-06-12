@@ -189,20 +189,44 @@
 <%= render 'scripts/autosize_field' %>
 
 <%# OKorn-Override (github.com/nextamed/docuseal-branding): Button-Loesung
-    nach Paragraf 312j Abs. 3 BGB. Wenn der Submitter beim API-Erstellen die
-    Metadata `payment_notice` erhalten hat (gesetzt von ok_manage bei
-    zahlungs-/provisionspflichtigen Vertraegen), schreibt das Snippet den
-    finalen Abschluss-Button (#submit_form_button) und die optionale
-    E-Signatur-Einwilligungszeile auf den zahlungspflichtigen Text um.
-    Der MutationObserver uebersteht die Vue-Re-Renders der Submission-Form.
-    Nach jedem DocuSeal-Update pruefen: Button-Id in
+    nach Paragraf 312j Abs. 3 BGB. Drei Trigger, direkt im Template steuerbar
+    (kein Chatbot noetig) bzw. per API-Metadata:
+      1. Expliziter Marker in Feldname/-titel/-beschreibung eines Feldes
+         DIESES Submitters: ##button: Eigener Text## oder ##button->Eigener Text##
+         -> Button-Text = exakt dieser Text.
+      2. Keyword: ein Feldname/-titel dieses Submitters enthaelt
+         "zahlungspflichtig" -> Standard-Text.
+      3. Submitter-Metadata payment_notice (gesetzt von ok_manage bei
+         requiresPaymentNotice=true) -> Standard-Text.
+    Das Snippet schreibt den finalen Abschluss-Button (#submit_form_button)
+    und die optionale E-Signatur-Einwilligungszeile um und entfernt sichtbare
+    ##button...##-Marker aus der Anzeige. MutationObserver uebersteht die
+    Vue-Re-Renders. Nach jedem DocuSeal-Update pruefen: Button-Id in
     app/javascript/submission_form/form.vue, i18n-Keys sign_and_complete /
     complete, Disclosure-Markup in signature_step.vue. %>
-<% if @submitter.metadata['payment_notice'].present? %>
+<%
+  okorn_fields = (@submitter.submission.template_fields || @submitter.submission.template.fields).to_a.select do |f|
+    f['submitter_uuid'] == @submitter.uuid
+  end
+  okorn_marker_label = okorn_fields.filter_map do |f|
+    [f['name'], f['title'], f['description']].compact.join(' ')[/##\s*button\s*(?:->|:)\s*([^#]+?)\s*##/i, 1]
+  end.first
+  okorn_keyword_hit = okorn_fields.any? do |f|
+    "#{f['name']} #{f['title']}".match?(/zahlungspflichtig/i)
+  end
+  okorn_payment_label =
+    if okorn_marker_label.present?
+      okorn_marker_label
+    elsif @submitter.metadata['payment_notice'].present? || okorn_keyword_hit
+      'Zahlungspflichtig / provisionspflichtig abschließen'
+    end
+%>
+<% if okorn_payment_label %>
   <script id="okorn_payment_notice_button" nonce="<%= content_security_policy_nonce %>">
     (function () {
-      var LABEL = 'Zahlungspflichtig / provisionspflichtig abschließen'
+      var LABEL = '<%= j okorn_payment_label %>'
       var TARGETS = ['Unterzeichnen und abschließen', 'Sign and Complete', 'Abschließen', 'Complete']
+      var MARKER_RE = /##\s*button\s*(?:->|:)\s*[^#]+?\s*##/gi
 
       function patchButton () {
         var btn = document.getElementById('submit_form_button')
@@ -227,9 +251,22 @@
         }
       }
 
+      function stripMarkers () {
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+        var node
+        while ((node = walker.nextNode())) {
+          MARKER_RE.lastIndex = 0
+          if (MARKER_RE.test(node.nodeValue)) {
+            MARKER_RE.lastIndex = 0
+            node.nodeValue = node.nodeValue.replace(MARKER_RE, '').replace(/\s{2,}/g, ' ')
+          }
+        }
+      }
+
       function patch () {
         patchButton()
         patchDisclosure()
+        stripMarkers()
       }
 
       new MutationObserver(patch).observe(document.body, {
