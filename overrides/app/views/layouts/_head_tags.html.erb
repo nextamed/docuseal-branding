@@ -1,0 +1,6 @@
+<%# OKorn-Override: neutraler Browser-Tab-Titel statt DocuSeal-Produktname
+    (Upstream 3.0.3: 'DocuSeal' bzw. 'DocuSeal | Open Source Document Signing'). %>
+<title>
+  <%= content_for(:html_title) || (signed_in? ? 'OKorn Immobilien' : 'OKorn Immobilien — Signatur-Plattform') %>
+</title>
+<%= render 'shared/meta' %>

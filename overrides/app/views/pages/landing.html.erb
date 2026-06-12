@@ -1,8 +1,10 @@
 <%# OKorn-Override (github.com/nextamed/docuseal-branding): neutrale Startseite
     statt DocuSeal-Produkt-Marketing. Empfaenger landen hier nur, wenn sie die
     Domain direkt aufrufen — die eigentlichen Signier-Links zeigen auf
-    /s/<slug>. Die AGPL-Attribution am Seitenende bleibt unangetastet
-    (render 'shared/attribution'). Upstream-Basis: 3.0.3. %>
+    /s/<slug>. Die AGPL-Attribution bleibt auf den vier Empfaenger-Surfaces
+    (start_form, submit_form, completed, success) unangetastet — die Landing
+    rendert sie nicht (kein Pflicht-Surface laut Phase-1-Spec).
+    Upstream-Basis: 3.0.3. %>
 <section class="flex items-center justify-center">
   <div class="py-16 mx-auto max-w-3xl px-4">
     <div class="text-center">
@@ -27,4 +29,3 @@
     </div>
   </div>
 </section>
-<%= render 'shared/attribution', with_counter: true %>
