@@ -1,0 +1,11 @@
+# sign.okorn.biz - Signatur-Plattform der OKorn Immobilien.
+# Diese Domain darf in keinem Suchindex erscheinen.
+#
+# Die autoritative Anweisung dafuer ist das `noindex` auf jeder Seite
+# (overrides/app/views/shared/_meta.html.erb). Damit Google/Bing es lesen
+# koennen, muessen sie die Seiten abrufen DUERFEN - ein `Disallow: /` wuerde
+# das verhindern und URL-only-Treffer (URL im Index ohne Inhalt, inklusive
+# Signier-Slug im Pfad) erst ermoeglichen. Gleiche Begruendung und gleiches
+# Muster wie in ok_manage (packages/web/src/app/robots.ts).
+User-agent: *
+Allow: /
