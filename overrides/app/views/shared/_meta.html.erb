@@ -1,9 +1,16 @@
 <%# OKorn-Override (Upstream-Basis 3.0.3, shared/_meta.html.erb): neutrale
     Titel/Beschreibung/OpenGraph statt DocuSeal-Produkt-Metas; Twitter-Handles
     entfernt. Favicon-Links und Preview-Logik unveraendert. %>
-<% if Docuseal.demo? || (request.path != '/' && !devise_controller?) %>
-  <meta name="robots" content="noindex">
-<% end %>
+<%# OKorn-Override: sign.okorn.biz ist eine reine Empfaenger-Plattform und darf
+    in KEINEM Suchindex erscheinen. Upstream (3.0.3) nimmt Root-Pfad und
+    Devise-Seiten vom noindex aus - genau die beiden Surfaces, die ein Crawler
+    ohne Signier-Link ueberhaupt erreicht. Deshalb hier unbedingt auf jeder
+    Seite. Wortlaut identisch zu ok_manage NOINDEX_HEADERS
+    (packages/web/src/lib/security/noindex.ts). Bewusst KEIN `Disallow` in
+    public/robots.txt: eine per robots.txt gesperrte URL wird nicht gecrawlt,
+    das noindex also nie gelesen - Google darf sie dann als URL-only-Treffer
+    indexieren. %>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
 <% title = content_for(:html_title) || (signed_in? ? 'OKorn Immobilien' : 'OKorn Immobilien — Signatur-Plattform') %>
 <% description = content_for(:html_description) || 'Signatur-Plattform von OKorn Immobilien: Dokumente sicher und digital unterschreiben.' %>
 <meta name="description" content="<%= description %>">
