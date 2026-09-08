@@ -2,7 +2,7 @@
 # Builds on upstream DocuSeal OSS and retains AGPLv3 attribution.
 # Renovate keeps this base image tag fresh: see renovate.json.
 
-ARG DOCUSEAL_VERSION=latest
+ARG DOCUSEAL_VERSION=3.2.4
 FROM docuseal/docuseal:${DOCUSEAL_VERSION}
 
 # Static assets (favicons + custom logo)
