@@ -1,0 +1,32 @@
+name: repo-standard
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repo-standard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate repository standard and matching offline checks
+        env:
+          REPO_STANDARD_EVENT_BASE: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        shell: bash
+        run: |
+          args=()
+          if [[ -n "$REPO_STANDARD_EVENT_BASE" && ! "$REPO_STANDARD_EVENT_BASE" =~ ^0+$ ]]; then
+            args+=(--base "$REPO_STANDARD_EVENT_BASE")
+          fi
+          python3 ai/standard/validate_repo.py . "${args[@]}" --run-checks
