@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "repository": "nextamed/docuseal-branding",
+  "profile": "overlay",
+  "modules": [
+    "public",
+    "upstream"
+  ],
+  "adapter_mode": "wrapper",
+  "knowledge": {
+    "current": "Dockerfile",
+    "decisions": "ai/knowledge/README.md",
+    "learnings": "ai/knowledge/README.md",
+    "runbooks": "README.md"
+  },
+  "checks": [
+    {
+      "name": "overlay-behavior",
+      "argv": [
+        "node",
+        "--test",
+        "tests/overlay.test.mjs"
+      ],
+      "paths": [
+        "overrides/**",
+        "tests/**",
+        "Dockerfile"
+      ],
+      "kind": "offline"
+    }
+  ],
+  "skills": [
+    "ai/skills/docuseal-branding-develop/SKILL.md",
+    "ai/skills/docuseal-branding-operate/SKILL.md"
+  ],
+  "deployment": {
+    "mode": "image-publish",
+    "description": "main veröffentlicht ein Image; der eingesetzte Dienst wird separat verifiziert."
+  },
+  "existing_ci": [
+    {
+      "name": "Build and Push Image",
+      "workflow": ".github/workflows/build-and-push.yml",
+      "paths": [
+        "Dockerfile",
+        "overrides/**",
+        ".github/workflows/build-and-push.yml"
+      ]
+    }
+  ],
+  "source": {
+    "repository": "nextamed/ai-repo-standards",
+    "version": "1.0.0",
+    "revision": "8dd1d36d572659bc6cb61288f071965aa85def24"
+  },
+  "managed_files": {
+    "ai/standard/core.md": "5693acd30e9178928f3b88055dbe75b621da7decd1f7e45c7bf959a40db3649a",
+    "ai/standard/profile.md": "30ca0bd7d99119835fcce849ed3b2306f3eae51f498dcf8ba873c0103b25c374",
+    "ai/standard/VERSION": "59854984853104df5c353e2f681a15fc7924742f9a2e468c29af248dce45ce03",
+    "ai/standard/validate_repo.py": "800b1cb521aa582492b33fc99e3e48d58940902ce87508ff4955bce0a3ec4527",
+    "ai/standard/LICENSE": "bed47dbc0a2f5d26875c1f85eaa536e82b698cef49c7b3a3963c340710d03158",
+    ".github/workflows/repo-standard.yml": "d56f6f75f75af6e5f5283859c81ee3a505cd795f66b5e098b1253ec93771fe6b"
+  }
+}

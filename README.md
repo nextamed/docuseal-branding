@@ -111,9 +111,10 @@ Nach Cutover:
       (Email kommt zunaechst in englisch mit DocuSeal-Logo — ok fuer Phase 1, gehoert zu Phase 2/3)
 
 Rollback (falls noetig):
-- [ ] Coolify-UI: `image:` zurueck auf `docuseal/docuseal:latest`
-- [ ] Redeploy
-      (DB- und Data-Volume sind unberuehrt, Rollback ist sofort wirksam)
+- [ ] Vorherigen, vor dem Update dokumentierten Image-Digest wieder einsetzen
+- [ ] Vorher pruefen, ob die neue Upstream-Version Datenmigrationen ausgefuehrt hat;
+      Image-Ruecknahme allein garantiert keine Datenkompatibilitaet
+- [ ] Autorisierten Rueckweg ausfuehren, Gesundheits- und betroffene Funktionstests wiederholen
 ```
 
 ## Phase-Status
