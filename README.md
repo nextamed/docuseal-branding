@@ -23,7 +23,9 @@ DocuSeal OSS wird unveraendert als Basis-Image verwendet. Die Version ist im Doc
    2. **Keyword**: Ein Feldname/-titel der Rolle enthaelt „zahlungspflichtig" → Standard-Text „Zahlungspflichtig / provisionspflichtig abschließen".
    3. **API-Metadata** `payment_notice` am Submitter (setzt ok_manage bei `requiresPaymentNotice=true`, Feature 023) → Standard-Text.
 
-   Vorgaenge ohne Trigger bleiben unveraendert. Hintergrund: Embedded Components sind bei selfhosted DocuSeal Pro-only; dieses Override patcht stattdessen die OSS-Hosted-Form. Details: ok_manage-Spec `023-docuseal-signing-slice`.
+   Vorgaenge ohne Trigger bleiben unveraendert.
+
+   **Bekannte Luecken (Stand 3.3.1, Code-Analyse 2026-10-07, nicht im Browser getestet):** Das Snippet erkennt den Abschluss-Button nur ueber deutsche/englische Texte in `#submit_form_button`. Nicht umbeschriftet werden (a) der Kopfzeilen-Button `.complete-button` „Abschließen" (erscheint, sobald alle Pflichtfelder ausgefuellt sind, und schliesst den Vorgang ab), (b) der Button im Querformat auf Handys (`alwaysMinimize`, Hoehe < 550 px: „Einreichen" auf jedem Schritt), (c) Formulare in einer anderen Browsersprache (Sprache folgt `Accept-Language`, z. B. fr „Signer et terminer"), (d) das Einladungsformular bei Einladung weiterer Parteien. `patchDisclosure` greift im Hosted-Form nicht, weil dort keine Disclosure-Zeile gerendert wird. Sichtbar ist der Text in Grossbuchstaben (daisyUI `--btn-text-case`). Hintergrund: Embedded Components sind bei selfhosted DocuSeal Pro-only; dieses Override patcht stattdessen die OSS-Hosted-Form. Details: ok_manage-Spec `023-docuseal-signing-slice`.
 
 **Explizit NICHT geaendert** (Lizenz-Compliance, AGPLv3 + Section 7(b) Attribution):
 

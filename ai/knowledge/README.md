@@ -44,6 +44,21 @@ Standardwert (`merge_default_values`). Ein solches Feld ist der Weg ohne
 Signaturlogik, die Schaltflächenbeschriftung ins Protokoll zu bringen. Die
 rechtliche Bewertung ist damit nicht belegt.
 
+## Erkenntnis · 2026-10-07 · Lücken der Buttonlösung, Klick-Screenshot
+
+Code-Analyse 3.3.1 mit Gegenprüfung: Der Vorgang lässt sich auch über den
+Kopfzeilen-Button „Abschließen", über „Einreichen" im Handy-Querformat, in
+zwölf weiteren Browsersprachen und über das Einladungsformular abschließen;
+das Overlay beschriftet dort nichts um. Ein Klick-Screenshot ist keine
+Lösung: Browser erlauben ohne Freigabedialog nur eine Nachzeichnung des DOM,
+ins Protokoll käme sie nur über ein sichtbares, nicht schreibgeschütztes
+Bildfeld und ein angehaltenes Absenden (neue Signaturlogik). Ungültige
+Bild-UUIDs lassen die Audit-Trail-Erzeugung nach dem Abschluss scheitern.
+§ 25 TDDDG ist wahrscheinlich einschlägig. Belastbarer: Lücken schließen,
+serverseitiges Protokollfeld, Referenz-Testläufe pro Template- und
+Overlay-Version. Beleg: Workflow-Analyse mit Code-Stellen in form.vue,
+submit_values.rb, generate_audit_trail.rb; kein Browser- oder Live-Test.
+
 ## Offene Nachweise
 
 Rails-Integration, visuelle Empfängeroberflächen und Wiederherstellung bei einem
