@@ -19,6 +19,31 @@ Tag und kein belegter Vorgängerstand. Für künftige Betriebsänderungen vorher
 Digest festhalten und Datenkompatibilität prüfen. Beleg: README, Abschnitt Rollback;
 Dockerfile pinnt demgegenüber einen konkreten Upstream. Keine Live-Rücknahme getestet.
 
+## Erkenntnis · 2026-10-07 · Upstream 3.3.1
+
+`submit_form/show.html.erb` übergibt dem Formular ab 3.3.1 neue Locals
+(`prefill_signature`, `prefill_initials`, `current_user_data`); ein alter
+Full-File-Override hätte die Signaturseite gebrochen. Tab-Titel der
+Empfängerseiten kommen jetzt aus `shared/_html_title.html.erb`, das Overlay
+überschreibt nur diesen Partial. Neue Migration `otp_challenges` ist additiv;
+vor einer Rücknahme auf 3.2.4 trotzdem Digest und Daten prüfen. Beleg: Diff
+der Tags 3.2.4/3.3.1, ERB-Compile mit ActionView 8.1, Overlay-Tests. Kein
+Image-Build und kein Browser-Test in dieser Umgebung.
+
+## Erkenntnis · 2026-10-07 · Buttonlösung, Widerrufsfunktion, Protokoll
+
+BGH I ZR 159/24 (9.10.2025): Online geschlossener Maklervertrag ohne
+ausdrückliche Bestätigung der Zahlungspflicht am Abschluss-Button ist endgültig
+unwirksam. § 356a BGB (seit 19.6.2026) verlangt bei Fernabsatzverträgen über
+eine Online-Benutzeroberfläche eine Widerrufsfunktion („Vertrag widerrufen",
+dann „Widerruf bestätigen", Eingangsbestätigung auf dauerhaftem Datenträger).
+DocuSeal 3.3.1 hat keine Widerrufsfunktion, nur „Ablehnen" vor der Signatur.
+Der Audit-Trail druckt Feldwerte des Unterzeichners (Account-Config
+`with_audit_values`, Standard an), auch schreibgeschützte Felder mit
+Standardwert (`merge_default_values`). Ein solches Feld ist der Weg ohne
+Signaturlogik, die Schaltflächenbeschriftung ins Protokoll zu bringen. Die
+rechtliche Bewertung ist damit nicht belegt.
+
 ## Offene Nachweise
 
 Rails-Integration, visuelle Empfängeroberflächen und Wiederherstellung bei einem

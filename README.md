@@ -6,7 +6,7 @@ OKorn-gebrandetes Custom-Docker-Image basierend auf [DocuSeal OSS](https://githu
 
 ## Was dieses Repo macht
 
-DocuSeal OSS wird unveraendert als Basis-Image verwendet. Die Version ist im Dockerfile gepinnt (`ARG DOCUSEAL_VERSION`, aktuell **3.2.4**), damit reproduzierbar ist, gegen welchen Upstream-Stand die Full-File-Overrides gebaut wurden; Renovate hebt den Pin bei neuen Releases an. Dieses Overlay legt drei Klassen von Override-Dateien drueber:
+DocuSeal OSS wird unveraendert als Basis-Image verwendet. Die Version ist im Dockerfile gepinnt (`ARG DOCUSEAL_VERSION`, aktuell **3.3.1**), damit reproduzierbar ist, gegen welchen Upstream-Stand die Full-File-Overrides gebaut wurden; Renovate hebt den Pin bei neuen Releases an. Dieses Overlay legt drei Klassen von Override-Dateien drueber:
 
 1. **Static Assets** (`overrides/public/`) — OKorn-Logo (PNG), Favicons, Apple-Touch-Icon.
 2. **View-Partials** (`overrides/app/views/`) — vier ERB-Files, die sichtbare Headlines „DocuSeal" durch „OKorn Immobilien" ersetzen:
@@ -15,10 +15,10 @@ DocuSeal OSS wird unveraendert als Basis-Image verwendet. Die Version ist im Doc
    - `submit_form/_docuseal_logo.html.erb`
    - `templates_share_link_qr/_logo.html.erb`
 3. **i18n-Override** (`overrides/config/locales/zz_okorn_overrides.de.yml`) — aendert deutschen `powered_by`-Wert von „Bereitgestellt von" zu „Erstellt mit".
-4. **Neutrale Titel/Metas** (`overrides/app/views/layouts/_head_tags.html.erb`, `overrides/app/views/shared/_meta.html.erb`) — Browser-Tab-Titel „OKorn Immobilien — Signatur-Plattform" statt DocuSeal-Produktname; OpenGraph/Description neutralisiert, Twitter-Handles entfernt, `og:site_name` = OKorn Immobilien. Favicon-Links unveraendert. Der Signing-Tab-Titel kommt aus `submit_form/show.html.erb` („… | OKorn Immobilien").
-5. **Neutrale Startseite** (`overrides/app/views/pages/landing.html.erb`, Full-File-Override, Basis 3.2.4 — upstream seit 3.0.3 unveraendert) — ersetzt das DocuSeal-Produkt-Marketing durch „Signatur-Plattform / OKorn Immobilien" mit kurzem Empfaenger-Hinweis; AGPL-Attribution am Seitenende bleibt erhalten. Dazu `shared/_title.html.erb`: Navbar-Schriftzug „DocuSeal" → „OKorn Immobilien".
+4. **Neutrale Titel/Metas** (`overrides/app/views/layouts/_head_tags.html.erb`, `overrides/app/views/shared/_meta.html.erb`) — Browser-Tab-Titel „OKorn Immobilien — Signatur-Plattform" statt DocuSeal-Produktname; OpenGraph/Description neutralisiert, Twitter-Handles entfernt, `og:site_name` = OKorn Immobilien. Favicon-Links unveraendert. Die Tab-Titel der Empfaengerseiten (Start-Form, Submit-Form, E-Mail-2FA) setzt seit Upstream 3.3.1 das Mini-Partial `shared/_html_title.html.erb` („… | OKorn Immobilien").
+5. **Neutrale Startseite** (`overrides/app/views/pages/landing.html.erb`, Full-File-Override, Basis 3.3.1 — upstream seit 3.0.3 unveraendert) — ersetzt das DocuSeal-Produkt-Marketing durch „Signatur-Plattform / OKorn Immobilien" mit kurzem Empfaenger-Hinweis; AGPL-Attribution am Seitenende bleibt erhalten. Dazu `shared/_title.html.erb`: Navbar-Schriftzug „DocuSeal" → „OKorn Immobilien".
 6. **Builder-Logo-CSS-Swap** (`overrides/app/views/templates/edit.html.erb`, `overrides/app/views/templates_preview/show.html.erb`) — Full-File-Overrides der Builder-Mount-Views: Das Editor-Logo kommt aus dem JS-Bundle (`template_builder/logo.vue`) und ist nicht per Partial overridebar; ein CSS-Block blendet das SVG aus und zeigt `/logo.png` als Hintergrund des `<a href="/">`.
-7. **Button-Loesung § 312j Abs. 3 BGB** (`overrides/app/views/submit_form/show.html.erb`) — Full-File-Override der Hosted-Form-View (Basis: Upstream-Tag 3.2.4, siehe Kommentar-Block am Dateiende). Ein MutationObserver-Snippet schreibt den finalen Abschluss-Button (`#submit_form_button`) und die E-Signatur-Einwilligungszeile um. **Drei Trigger** (gelten pro Submitter/Rolle):
+7. **Button-Loesung § 312j Abs. 3 BGB** (`overrides/app/views/submit_form/show.html.erb`) — Full-File-Override der Hosted-Form-View (Basis: Upstream-Tag 3.3.1, siehe Kommentar-Block am Dateiende). Ein MutationObserver-Snippet schreibt den finalen Abschluss-Button (`#submit_form_button`) und die E-Signatur-Einwilligungszeile um. **Drei Trigger** (gelten pro Submitter/Rolle):
    1. **Marker im Template** (direkt im DocuSeal-Editor nutzbar, kein Chatbot noetig): `##button: Eigener Text##` oder `##button->Eigener Text##` in Feldname, Feldtitel oder Feldbeschreibung eines Feldes der jeweiligen Rolle → Button-Text = exakt dieser Text. Sichtbare Marker werden aus der Anzeige entfernt.
    2. **Keyword**: Ein Feldname/-titel der Rolle enthaelt „zahlungspflichtig" → Standard-Text „Zahlungspflichtig / provisionspflichtig abschließen".
    3. **API-Metadata** `payment_notice` am Submitter (setzt ok_manage bei `requiresPaymentNotice=true`, Feature 023) → Standard-Text.
@@ -66,6 +66,7 @@ Beim ersten Push erstellt GHCR das Package als **private**. Damit Coolify ohne P
    - `app/javascript/submission_form/signature_step.vue` — Disclosure-Zeile enthaelt weiterhin den `esign-disclosure`-Link?
    - `app/views/pages/landing.html.erb` — **Full-File-Override!** Bei Upstream-Bumps pruefen, ob `shared/logo` noch existiert. Rendert bewusst KEINE Attribution (kein Pflicht-Surface; die vier Empfaenger-Surfaces behalten ihre).
    - `app/views/layouts/_head_tags.html.erb` + `app/views/shared/_meta.html.erb` — kleine Overrides; bei Upstream-Bumps gegen neue Meta-/Title-Logik diffen.
+   - `app/views/shared/_html_title.html.erb` — Mini-Override (Tab-Titel der Empfaengerseiten); pruefen, ob Start-/Submit-Form den Partial weiterhin rendern.
    - `app/views/shared/_title.html.erb` — Mini-Override (Logo + Schriftzug).
    - `app/views/templates/edit.html.erb` + `app/views/templates_preview/show.html.erb` — **Full-File-Overrides!** Bei jedem Upstream-Bump frisch vom neuen Tag ziehen und den `OKorn-Override`-Style-Block wieder anhaengen; `template_builder/builder.vue` muss weiterhin `<a href="/"><Logo/></a>` rendern.
    - Favicons/Logo: alle Dateien in `overrides/public/` werden aus `branding-source/okorn-logo-element.jpg` generiert (transparent via ImageMagick `-fuzz 12% -transparent white -trim`); `favicon.svg` traegt das PNG als eingebettete data-URI (externe Referenzen sind in SVG-Favicons blockiert).
@@ -79,6 +80,7 @@ Beim ersten Push erstellt GHCR das Package als **private**. Damit Coolify ohne P
 |---|---|---|
 | 2025-05 | 3.0.3 | Erst-Setup |
 | 2026-09-08 | **3.2.4** | `submit_form/show.html.erb` (Viewer-Rolle, `template&.name`, `service_url_time`, `with_signature_id_completed_at`), `templates/edit.html.erb` (`data-date-formats`) — alle uebrigen Override-Pfade upstream unveraendert; JS-Hooks (`#submit_form_button`, `sign_and_complete`/`complete`, `esign-disclosure`) und `powered_by` (de) verifiziert |
+| 2026-10-07 | **3.3.1** | `submit_form/show.html.erb` (`shared/html_title`, Native-App-Zweige, neue Formular-Locals `prefill_signature`/`prefill_initials`/`current_user_data` — alter Override haette die Signaturseite gebrochen), `templates/edit.html.erb` + `templates_preview/show.html.erb` (`native_title`, `data-native-platform`), `layouts/_head_tags.html.erb` (Native-App-Titel/-Styles); neu `shared/_html_title.html.erb`. Logo-Partials, Landing, Meta, `_title` upstream unveraendert; JS-Hooks (`#submit_form_button`, `sign_and_complete`/`complete`, `esign-disclosure`, Builder-`<a href="/"><Logo/></a>`) und `powered_by` (de) verifiziert |
 
 ## Coolify-Cutover-Checkliste
 
