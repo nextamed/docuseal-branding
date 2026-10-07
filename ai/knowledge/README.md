@@ -59,6 +59,20 @@ serverseitiges Protokollfeld, Referenz-Testläufe pro Template- und
 Overlay-Version. Beleg: Workflow-Analyse mit Code-Stellen in form.vue,
 submit_values.rb, generate_audit_trail.rb; kein Browser- oder Live-Test.
 
+## Erkenntnis · 2026-10-07 · Hinweisseite im Template
+
+Eine feste Hinweisseite lässt sich ohne Code anlegen: ins Vertrags-PDF
+zusammenführen (Builder „Bearbeiten" > „Mit vorherigem zusammenführen"), dann
+deckt der Dokument-Hash im Prüfprotokoll sie ab. Schreibgeschützte Textfelder
+mit Standardwert füllt der Server beim Abschluss; `{{date}}`/`{{time}}` stehen
+vorher wörtlich im Formular, `{{id}}` ist schon aufgelöst. Die Beschreibung
+des Unterschriftsfelds steht auf jedem Gerät direkt über Zeichenfeld und
+Schaltfläche. Der Standardtext der Schaltfläche bricht auch bei 560 px Breite
+auf zwei Zeilen um. Eine vorformulierte Tatsachenbestätigung des Kunden ist
+nach § 309 Nr. 12 b BGB voraussichtlich unwirksam, die Seite informiert daher
+nur. Beleg: Workflow-Analyse 3.3.1 (builder.vue, submit_values.rb,
+generate_audit_trail.rb), Render mit kompiliertem Form-CSS; kein Live-Test.
+
 ## Offene Nachweise
 
 Rails-Integration, visuelle Empfängeroberflächen und Wiederherstellung bei einem
