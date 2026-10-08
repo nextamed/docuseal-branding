@@ -73,6 +73,20 @@ nach § 309 Nr. 12 b BGB voraussichtlich unwirksam, die Seite informiert daher
 nur. Beleg: Workflow-Analyse 3.3.1 (builder.vue, submit_values.rb,
 generate_audit_trail.rb), Render mit kompiliertem Form-CSS; kein Live-Test.
 
+## Erkenntnis · 2026-10-08 · Doppelte Vorgänge durch „Erneut einreichen"
+
+Laufender Dienst: Image `ghcr.io/nextamed/docuseal-branding:latest` (main,
+Upstream 3.2.4; PR 9 nicht gemergt). Die Abschlussseite eines über den
+Freigabelink gestarteten Vorgangs zeigt bis 3 Tage nach Abschluss „Erneut
+einreichen" (`submit_form/completed.html.erb:47`, `RESUBMIT_TTL`). Ein Klick
+legt über `StartFormResubmitController#update` einen neuen Vorgang mit Name,
+E-Mail, Telefon und Metadaten der Person an; es geht keine Einladung raus,
+nur Webhook `submission.created`. Abschalten: Kontoeinstellung „Erneutes
+Einreichen abgeschlossener Formulare zulassen" (`allow_to_resubmit`).
+Beleg: Container-Logs vom 07./08.10. (Resubmit-PUT, danach neuer Submitter
+ohne Abschluss), Code 3.2.4. Datenbank nicht eingesehen. Nebenbefund: die
+ok_manage-Signaturtools melden fehlende `DOCUSEAL_APP_URL`/`DOCUSEAL_API_TOKEN`.
+
 ## Offene Nachweise
 
 Rails-Integration, visuelle Empfängeroberflächen und Wiederherstellung bei einem
