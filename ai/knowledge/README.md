@@ -87,6 +87,19 @@ Beleg: Container-Logs vom 07./08.10. (Resubmit-PUT, danach neuer Submitter
 ohne Abschluss), Code 3.2.4. Datenbank nicht eingesehen. Nebenbefund: die
 ok_manage-Signaturtools melden fehlende `DOCUSEAL_APP_URL`/`DOCUSEAL_API_TOKEN`.
 
+## Erkenntnis · 2026-10-08 · Was DocuSeal zu Unterzeichnern protokolliert
+
+DocuSeal 3.2.4 hält Einladungsmails (`send_email`), Öffnen/Klicks und
+Formularschritte als Ereignisse fest, nicht aber die Kopie-Mail nach dem
+Abschluss und keine Downloads auf der Abschlussseite. Belegbar sind diese nur
+über Server-Logs (nur wenige Stunden Rückblick) oder den Mailserver. Eine im
+Browser gemerkte Unterschrift wird nur dort vorbelegt, wo zu dieser E-Mail
+schon unterschrieben wurde (verschlüsseltes Cookie `signature_uuids`).
+Betrieb 2026-10-08: `SendFormCompletedWebhookRequestJob` lief im Abstand
+128/256 Minuten erneut, d. h. ein `form.completed`-Webhook scheitert seit
+dem 07.10. gegen 17 Uhr. Ziel-URL und Statuscodes stehen unter Einstellungen >
+Webhooks. Beleg: Container-Logs, Code `send_form_completed_webhook_request_job.rb`.
+
 ## Offene Nachweise
 
 Rails-Integration, visuelle Empfängeroberflächen und Wiederherstellung bei einem
