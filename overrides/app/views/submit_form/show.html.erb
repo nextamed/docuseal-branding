@@ -177,7 +177,9 @@
 <div class="fixed bottom-0 w-full h-0 z-50">
   <div class="mx-auto" style="max-width: 1000px">
     <div class="relative md:mx-32">
-      <%= render 'submit_form/submission_form', attachments_index: @attachments_index, submitter: @submitter, prefill_signature: @prefill_signature, prefill_initials: @prefill_initials, current_user_data: @current_user_data, configs: @form_configs, dry_run: local_assigns[:dry_run], expand: local_assigns[:expand], scroll_padding: local_assigns.fetch(:scroll_padding, turbo_native_app? ? '-80px' : '-110px'), schema: %>
+      <%# OKorn-Override: bei aktiver Buttonloesung das Formular immer auf Deutsch rendern (die Browsersprache wuerde sonst andere Button-Texte liefern). %>
+      <% okorn_button = OkornButtonLabel.compute(@submitter) %>
+      <%= I18n.with_locale(okorn_button ? :de : I18n.locale) { render 'submit_form/submission_form', attachments_index: @attachments_index, submitter: @submitter, prefill_signature: @prefill_signature, prefill_initials: @prefill_initials, current_user_data: @current_user_data, configs: @form_configs, dry_run: local_assigns[:dry_run], expand: local_assigns[:expand], scroll_padding: local_assigns.fetch(:scroll_padding, turbo_native_app? ? '-80px' : '-110px'), schema: schema } %>
     </div>
   </div>
 </div>
@@ -193,53 +195,58 @@
 <% end %>
 <%= render 'scripts/autosize_field' %>
 
-<%# OKorn-Override (github.com/nextamed/docuseal-branding): Button-Loesung
-    nach Paragraf 312j Abs. 3 BGB. Drei Trigger, direkt im Template steuerbar
-    (kein Chatbot noetig) bzw. per API-Metadata:
-      1. Expliziter Marker in Feldname/-titel/-beschreibung eines Feldes
-         DIESES Submitters: ##button: Eigener Text## oder ##button->Eigener Text##
-         -> Button-Text = exakt dieser Text.
-      2. Keyword: ein Feldname/-titel dieses Submitters enthaelt
-         "zahlungspflichtig" -> Standard-Text.
-      3. Submitter-Metadata payment_notice (gesetzt von ok_manage bei
-         requiresPaymentNotice=true) -> Standard-Text.
-    Das Snippet schreibt den finalen Abschluss-Button (#submit_form_button)
-    und die optionale E-Signatur-Einwilligungszeile um und entfernt sichtbare
-    ##button...##-Marker aus der Anzeige. MutationObserver uebersteht die
-    Vue-Re-Renders. Nach jedem DocuSeal-Update pruefen: Button-Id in
-    app/javascript/submission_form/form.vue, i18n-Keys sign_and_complete /
-    complete, Disclosure-Markup in signature_step.vue. %>
-<%
-  okorn_fields = (@submitter.submission.template_fields || @submitter.submission.template.fields).to_a.select do |f|
-    f['submitter_uuid'] == @submitter.uuid
-  end
-  okorn_marker_label = okorn_fields.filter_map do |f|
-    [f['name'], f['title'], f['description']].compact.join(' ')[/##\s*button\s*(?:->|:)\s*([^#]+?)\s*##/i, 1]
-  end.first
-  okorn_keyword_hit = okorn_fields.any? do |f|
-    "#{f['name']} #{f['title']}".match?(/zahlungspflichtig/i)
-  end
-  okorn_payment_label =
-    if okorn_marker_label.present?
-      okorn_marker_label
-    elsif @submitter.metadata['payment_notice'].present? || okorn_keyword_hit
-      'Zahlungspflichtig / provisionspflichtig abschließen'
-    end
-%>
-<% if okorn_payment_label %>
+<%# OKorn-Override (github.com/nextamed/docuseal-branding): Buttonloesung nach
+    Paragraf 312j Abs. 3 BGB und Klick-Nachweis.
+    Beschriftung und Ausloeser: OkornButtonLabel (config/okorn/button_label.rb),
+    dieselbe Quelle nutzt das Beweisprotokoll. Ausloeser pro Unterzeichner:
+    ##button: Text## bzw. ##button->Text## in Feldname/-titel/-beschreibung,
+    Metadata payment_notice (ok_manage) oder "zahlungspflichtig" in
+    Feldname/-titel. Bei aktiver Buttonloesung:
+      - Formular immer auf Deutsch (I18n.with_locale um submission_form oben)
+      - Kopfzeilen-Schaltflaeche .complete-button ausgeblendet; abgeschlossen
+        wird nur ueber die beschriftete Schaltflaeche im Formular
+      - jeder Text "Unterzeichnen und abschliessen", "Abschliessen" oder
+        "Einreichen" in einer Schaltflaeche des Formulars wird ersetzt
+        (nur nodeValue, Vue-Knoten bleiben erhalten). "Einreichen" zeigt
+        DocuSeal im Handy-Querformat auf jedem Schritt; dort steht die
+        Beschriftung bewusst auch auf Zwischenschritten
+      - ein Klick auf eine Abschluss-Schaltflaeche meldet an den eigenen
+        Server (POST /okorn/button_evidence, same-origin), was tatsaechlich
+        darauf stand; der Ablauf wird dabei weder angehalten noch veraendert
+    Nach jedem DocuSeal-Update pruefen: #submit_form_button und .complete-button
+    in app/javascript/submission_form/form.vue, i18n-Keys sign_and_complete /
+    complete / submit (de), Container #complete_button_container(_scroll). %>
+<% if okorn_button %>
+  <style>
+    #complete_button_container .complete-button,
+    #complete_button_container_scroll .complete-button { display: none !important; }
+  </style>
   <script id="okorn_payment_notice_button" nonce="<%= content_security_policy_nonce %>">
     (function () {
-      var LABEL = '<%= j okorn_payment_label %>'
-      var TARGETS = ['Unterzeichnen und abschließen', 'Sign and Complete', 'Abschließen', 'Complete']
+      var LABEL = '<%= j okorn_button.label %>'
+      var SLUG = '<%= j @submitter.slug %>'
+      var EVIDENCE_URL = '/okorn/button_evidence'
+      var TARGETS = ['Unterzeichnen und abschließen', 'Abschließen', 'Einreichen', 'Sign and Complete', 'Complete', 'Submit', 'submit']
+      var ROOTS = 'submission-form, #complete_button_container, #complete_button_container_scroll'
       var MARKER_RE = /##\s*button\s*(?:->|:)\s*[^#]+?\s*##/gi
 
-      function patchButton () {
-        var btn = document.getElementById('submit_form_button')
-        if (!btn) return
-        var spans = btn.querySelectorAll('span')
-        for (var i = 0; i < spans.length; i++) {
-          var t = (spans[i].textContent || '').trim()
-          if (TARGETS.indexOf(t) !== -1) spans[i].textContent = LABEL
+      function norm (s) {
+        return String(s || '').replace(/\s+/g, ' ').trim()
+      }
+
+      function inButtonOrHint (node) {
+        var el = node.parentElement
+        return !!(el && el.closest && el.closest('button, .font-semibold'))
+      }
+
+      function patchLabels () {
+        var roots = document.querySelectorAll(ROOTS)
+        for (var i = 0; i < roots.length; i++) {
+          var walker = document.createTreeWalker(roots[i], NodeFilter.SHOW_TEXT)
+          var node
+          while ((node = walker.nextNode())) {
+            if (TARGETS.indexOf(norm(node.nodeValue)) !== -1 && inButtonOrHint(node)) node.nodeValue = LABEL
+          }
         }
       }
 
@@ -268,12 +275,68 @@
         }
       }
 
+      // Klick-Nachweis: beschreibt synchron die angeklickte Abschluss-Schaltflaeche
+      // und meldet sie dem eigenen Server. Der Klick wird weder abgefangen noch
+      // verzoegert, Fehler werden verschluckt; der Signaturablauf laeuft weiter.
+      function attest (ev) {
+        try {
+          var el = ev.target && ev.target.closest ? ev.target.closest('button') : null
+          if (!el) return
+          var text = norm(el.textContent)
+          var header = !!(el.classList && el.classList.contains('complete-button'))
+          if (text !== LABEL && TARGETS.indexOf(text) === -1 && !header) return
+          var r = el.getBoundingClientRect()
+          var cs = window.getComputedStyle(el)
+          var top = document.elementFromPoint ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null
+          var form = document.querySelector('submission-form')
+          var rec = {
+            v: 1,
+            slug: SLUG,
+            event_type: ev.type,
+            is_trusted: !!ev.isTrusted,
+            label_expected: LABEL,
+            text: text,
+            rendered: norm(el.innerText),
+            kind: header ? 'header' : (el.id === 'submit_form_button' ? 'drawer' : 'other'),
+            button_id: el.id || null,
+            disabled: !!el.disabled,
+            visible: typeof el.checkVisibility === 'function' ? el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : null,
+            covered: !!(top && top !== el && !el.contains(top)),
+            top_element: top ? top.tagName + (top.id ? '#' + top.id : '') : null,
+            rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+            viewport: { w: window.innerWidth, h: window.innerHeight },
+            dpr: window.devicePixelRatio,
+            style: {
+              font_size: cs.fontSize,
+              font_weight: cs.fontWeight,
+              color: cs.color,
+              background: cs.backgroundColor,
+              text_transform: cs.textTransform,
+              opacity: cs.opacity,
+              display: cs.display,
+              visibility: cs.visibility
+            },
+            form_language: form && form.dataset ? form.dataset.language : null,
+            client_ts: new Date().toISOString(),
+            path: location.pathname,
+            orientation: window.screen && screen.orientation ? screen.orientation.type : null
+          }
+          var body = JSON.stringify(rec)
+          var sent = false
+          if (navigator.sendBeacon) sent = navigator.sendBeacon(EVIDENCE_URL, new Blob([body], { type: 'application/json' }))
+          if (!sent && window.fetch) {
+            window.fetch(EVIDENCE_URL, { method: 'POST', body: body, headers: { 'Content-Type': 'application/json' }, keepalive: true, credentials: 'same-origin' }).catch(function () {})
+          }
+        } catch (e) {}
+      }
+
       function patch () {
-        patchButton()
+        patchLabels()
         patchDisclosure()
         stripMarkers()
       }
 
+      document.addEventListener('click', attest, true)
       new MutationObserver(patch).observe(document.body, {
         childList: true,
         subtree: true,

@@ -27,6 +27,18 @@
         "Dockerfile"
       ],
       "kind": "offline"
+    },
+    {
+      "name": "evidence-and-label",
+      "argv": [
+        "ruby",
+        "tests/okorn_evidence_test.rb"
+      ],
+      "paths": [
+        "overrides/config/**",
+        "tests/**"
+      ],
+      "kind": "offline"
     }
   ],
   "skills": [
