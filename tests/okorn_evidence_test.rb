@@ -67,13 +67,18 @@ class OkornEvidenceTest < Minitest::Test
     ENV.delete('OKORN_EVIDENCE_DIR')
   end
 
-  def test_chain_links_entries_and_verifies
-    first = OkornEvidence.record('http', { 'slug' => 'abc', 'status' => 200 })
+  def ref(slug, submission_id)
+    { 'slug_sha256' => OkornEvidence.slug_digest(slug), 'submission_id' => submission_id }
+  end
+
+  def test_chain_links_entries_through_salted_commitments
+    first = OkornEvidence.record('http', { 'status' => 200 })
     second = OkornEvidence.record('form_completed', { submission_id: 180, nested: { flag: false } })
 
     assert_equal 1, first['seq']
     assert_equal OkornEvidence::GENESIS, first['prev']
     assert_equal first['hash'], second['prev']
+    assert_equal 64, second['commit'].size
     assert_equal false, second.dig('data', 'nested', 'flag')
     report = OkornEvidence.verify
     assert report[:ok], report[:errors].inspect
@@ -86,6 +91,9 @@ class OkornEvidenceTest < Minitest::Test
     lines = File.readlines(file)
 
     File.write(file, lines[0] + lines[1].sub('"n":1', '"n":9') + lines[2])
+    assert_match(/passen nicht zum commit/, OkornEvidence.verify[:errors].join)
+
+    File.write(file, lines[0] + lines[1].sub('"event":"http"', '"event":"xxxx"') + lines[2])
     assert_match(/hash stimmt nicht/, OkornEvidence.verify[:errors].join)
 
     File.write(file, lines[0] + lines[2])
@@ -94,13 +102,26 @@ class OkornEvidenceTest < Minitest::Test
     assert_match(/prev passt nicht/, errors)
   end
 
-  def test_survives_missing_head_and_spans_days
+  def test_head_file_is_only_a_cache_and_days_roll_over
     OkornEvidence.record('a', {}, now: Time.utc(2026, 10, 7, 23, 59, 59))
-    File.delete(File.join(@dir, 'chain_head.json'))
+    File.write(File.join(@dir, 'chain_head.json'), '{"seq":99,"hash":"kaputt"}')
     OkornEvidence.record('b', {}, now: Time.utc(2026, 10, 8, 0, 0, 1))
 
     assert_equal 2, Dir.glob(File.join(@dir, 'evidence-*.jsonl')).size
     assert OkornEvidence.verify[:ok]
+  end
+
+  def test_torn_last_line_is_quarantined_and_chain_continues
+    OkornEvidence.record('a', {})
+    file = Dir.glob(File.join(@dir, 'evidence-*.jsonl')).first
+    File.open(file, 'a') { |f| f.write('{"v":2,"seq":2,"halb') }
+
+    entry = OkornEvidence.record('b', {})
+    events = OkornEvidence.entries.map { |e| e['event'] }.to_a
+    assert_equal %w[a recovered_partial_write b], events
+    assert_equal 3, entry['seq']
+    assert OkornEvidence.verify[:ok], OkornEvidence.verify[:errors].inspect
+    assert_equal 1, Dir.glob(File.join(@dir, 'quarantine', '*.part')).size
   end
 
   def test_raw_archive_is_hashed_and_tamper_evident
@@ -114,14 +135,33 @@ class OkornEvidenceTest < Minitest::Test
     assert_match(/Archivdatei verändert/, OkornEvidence.verify[:errors].join)
   end
 
-  def test_export_filters_by_submission_and_slug
-    OkornEvidence.record('http', { 'submitter' => { 'slug' => 'aaa', 'submission_id' => 180 } })
-    OkornEvidence.record('http', { 'submitter' => { 'slug' => 'bbb', 'submission_id' => 181 } })
-    OkornEvidence.record('mail', { 'submitter' => { 'slug' => 'aaa', 'submission_id' => 180 } })
+  def test_export_redacts_foreign_entries_and_ignores_client_supplied_ids
+    OkornEvidence.record('http', { 'submitter' => ref('aaa', 180) })
+    OkornEvidence.record('http', { 'submitter' => ref('bbb', 181), 'client' => { 'submission_id' => 180 } })
+    OkornEvidence.record('mail', { 'submitter' => ref('aaa', 180) })
+    OkornEvidence.record('http', { 'file' => { 'attached_to' => [{ 'submission_id' => 180 }] } })
 
-    assert_equal 2, OkornEvidence.export(submission_id: 180)['entries'].size
-    assert_equal 1, OkornEvidence.export(submitter_slug: 'bbb')['entries'].size
-    assert OkornEvidence.export(submission_id: 180)['verify'][:ok]
+    export = OkornEvidence.export(submission_id: 180)
+    assert_equal 3, export['matching']
+    assert_equal 4, export['chain'].size, 'Kette vollständig, fremde Einträge nur geschwärzt'
+    foreign = export['chain'][1]
+    refute foreign.key?('data')
+    refute foreign.key?('salt')
+    assert_equal OkornEvidence.entry_hash(foreign), foreign['hash'], 'geschwärzter Eintrag bleibt nachrechenbar'
+    assert_equal 1, OkornEvidence.export(submitter_slug: 'bbb')['matching']
+    assert export['verify'][:ok]
+  end
+
+  def test_redaction_after_retention_keeps_the_chain_valid
+    raw = OkornEvidence.store_raw('mail', 'alt', extension: 'eml', now: Time.utc(2020, 1, 1))
+    OkornEvidence.record('mail', { 'raw' => raw }, now: Time.utc(2020, 1, 1))
+    OkornEvidence.record('http', { 'x' => 1 }, now: Time.utc(2026, 1, 1))
+
+    assert_equal 1, OkornEvidence.redact_before!(Time.utc(2021, 1, 1))
+    refute File.exist?(File.join(@dir, raw['path']))
+    report = OkornEvidence.verify
+    assert report[:ok], report[:errors].inspect
+    assert_equal 1, report[:redacted]
   end
 
   def test_concurrent_writers_keep_a_valid_chain
@@ -131,6 +171,13 @@ class OkornEvidenceTest < Minitest::Test
     report = OkornEvidence.verify
     assert report[:ok], report[:errors].first(3).inspect
     assert_equal 200, report[:entries]
+  end
+
+  def test_invalid_utf8_from_headers_is_recorded_not_dropped
+    entry = OkornEvidence.record('http', { 'user_agent' => "Mozilla/5.0 \xFF".b, 'name' => "caf\xC3\xA9".b })
+    refute_nil entry
+    assert_equal 'café', entry.dig('data', 'name')
+    assert OkornEvidence.verify[:ok]
   end
 
   def test_disabled_and_failing_writes_never_raise
@@ -166,16 +213,16 @@ class OkornEvidenceShipperTest < Minitest::Test
     @dir = Dir.mktmpdir('okorn-ship')
     ENV['OKORN_EVIDENCE_DIR'] = @dir
     ENV['OKORN_EVIDENCE_S3_BUCKET'] = 'okorn-test'
-    ENV['OKORN_EVIDENCE_S3_ACCESS_KEY_ID'] = 'id'
-    ENV['OKORN_EVIDENCE_S3_SECRET_ACCESS_KEY'] = 'secret'
+    ENV['OKORN_EVIDENCE_S3_ACCESS_KEY'] = 'id'
+    ENV['OKORN_EVIDENCE_S3_SECRET_KEY'] = 'secret'
   end
 
   def teardown
     FileUtils.remove_entry(@dir)
-    %w[OKORN_EVIDENCE_DIR OKORN_EVIDENCE_S3_BUCKET OKORN_EVIDENCE_S3_ACCESS_KEY_ID OKORN_EVIDENCE_S3_SECRET_ACCESS_KEY].each { |k| ENV.delete(k) }
+    %w[OKORN_EVIDENCE_DIR OKORN_EVIDENCE_S3_BUCKET OKORN_EVIDENCE_S3_ACCESS_KEY OKORN_EVIDENCE_S3_SECRET_KEY].each { |k| ENV.delete(k) }
   end
 
-  def test_ships_closed_days_once_with_object_lock_and_anchor
+  def test_ships_closed_days_once_with_object_lock_and_compliance_anchor
     OkornEvidence.record('http', {}, now: Time.utc(2026, 10, 7, 10))
     raw = OkornEvidence.store_raw('mail', 'eml', extension: 'eml', now: Time.utc(2026, 10, 7, 10))
     OkornEvidence.record('mail', { 'raw' => raw }, now: Time.utc(2026, 10, 7, 10))
@@ -185,17 +232,34 @@ class OkornEvidenceShipperTest < Minitest::Test
     now = Time.utc(2026, 10, 8, 12)
     result = OkornEvidence::Shipper.run(now:, client:)
 
-    keys = client.puts.map { |p| p[:key] }
+    data = client.puts.reject { |p| p[:key].include?('/anchors/') }
+    anchor = client.puts.find { |p| p[:key].include?('/anchors/') }
+    keys = data.map { |p| p[:key] }
     assert_includes keys, 'sign.okorn.biz/evidence-2026-10-07.jsonl'
     assert(keys.any? { |k| k.start_with?('sign.okorn.biz/mail/2026-10-07/') })
     refute_includes keys, 'sign.okorn.biz/evidence-2026-10-08.jsonl'
-    assert(keys.any? { |k| k.start_with?('sign.okorn.biz/anchors/') })
-    assert(client.puts.all? { |p| p[:object_lock_mode] == 'GOVERNANCE' && p[:object_lock_retain_until_date] > now })
+    assert(data.all? { |p| p[:object_lock_mode] == 'GOVERNANCE' && p[:object_lock_retain_until_date] > now })
+    assert_equal 'COMPLIANCE', anchor[:object_lock_mode]
+    assert_equal 3, JSON.parse(anchor[:body]).dig('head', 'seq')
     assert_equal 2, result[:shipped].size
 
     second = FakeClient.new
     OkornEvidence::Shipper.run(now: now + 60, client: second)
     assert_equal 1, second.puts.size, 'nur der neue Anker, keine erneuten Dateien'
+  end
+
+  def test_changed_file_is_never_overwritten
+    OkornEvidence.record('http', {}, now: Time.utc(2026, 10, 7, 10))
+    OkornEvidence::Shipper.run(now: Time.utc(2026, 10, 8, 12), client: FakeClient.new)
+    file = File.join(@dir, 'evidence-2026-10-07.jsonl')
+    File.write(file, File.read(file).sub('"http"', '"xxxx"'))
+
+    client = FakeClient.new
+    OkornEvidence::Shipper.run(now: Time.utc(2026, 10, 9, 12), client:)
+    changed = client.puts.map { |p| p[:key] }.find { |k| k.include?('evidence-2026-10-07.jsonl.changed-') }
+    refute_nil changed
+    refute(client.puts.any? { |p| p[:key] == 'sign.okorn.biz/evidence-2026-10-07.jsonl' })
+    assert(OkornEvidence.entries.any? { |e| e['event'] == 'evidence_changed_after_ship' })
   end
 
   def test_not_configured_is_a_noop

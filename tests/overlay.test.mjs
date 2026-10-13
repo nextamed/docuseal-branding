@@ -14,9 +14,16 @@ const LABEL = 'Zahlungspflichtig / provisionspflichtig abschließen';
 
 // Minimal DOM: Elemente mit Kindern, Textknoten, einfache Selektoren (tag, #id, .klasse).
 class TextNode {
-  constructor(value) { this.nodeType = 3; this.nodeValue = value; this.parentElement = null; }
-  get textContent() { return this.nodeValue; }
+  constructor(value) { this.nodeType = 3; this._value = value; this.writes = 0; this.parentElement = null; }
+  get nodeValue() { return this._value; }
+  set nodeValue(v) { this.writes += 1; this._value = v; }
+  get textContent() { return this._value; }
 }
+
+// Wie ActiveSupport json_escape(value.to_json) auf dem Server.
+const serverJson = (value) => JSON.stringify(value)
+  .replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')
+  .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
 class El {
   constructor(tag, opts = {}, children = []) {
@@ -78,7 +85,7 @@ function buildPage({ drawerText = 'Unterzeichnen und abschließen', headerText =
   return { body, drawer, drawerLabel, header, form };
 }
 
-function run(page, { label = LABEL, beacon = () => true, fetchImpl = null, topElement = null } = {}) {
+function run(page, { label = LABEL, token = 'signiertes-token--abc', beacon = () => true, fetchImpl = null, topElement = null } = {}) {
   const sent = [];
   const fetched = [];
   const listeners = [];
@@ -92,6 +99,7 @@ function run(page, { label = LABEL, beacon = () => true, fetchImpl = null, topEl
       return found;
     },
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; },
+    getElementById(id) { return this.querySelector(`#${id}`); },
     createTreeWalker(rootNode) {
       const texts = [];
       walk(rootNode, (n) => { if (n.nodeType === 3) texts.push(n); });
@@ -112,8 +120,8 @@ function run(page, { label = LABEL, beacon = () => true, fetchImpl = null, topEl
   };
   const navigator = { sendBeacon: (url, blob) => { sent.push({ url, body: JSON.parse(blob.text), type: blob.type }); return beacon(); } };
   const code = block[1]
-    .replace("'<%= j okorn_button.label %>'", JSON.stringify(label))
-    .replace("'<%= j @submitter.slug %>'", JSON.stringify('AbCdEf12'));
+    .replace('<%= raw json_escape(okorn_button.label.to_json) %>', () => serverJson(label))
+    .replace('<%= raw json_escape(okorn_token.to_json) %>', () => serverJson(token));
   assert.ok(!code.includes('<%'), 'No unhandled server template expression in executed script');
   vm.runInNewContext(code, {
     document, window, navigator, Blob: FakeBlob, location: { pathname: '/s/AbCdEf12' }, screen: window.screen,
@@ -126,7 +134,8 @@ function run(page, { label = LABEL, beacon = () => true, fetchImpl = null, topEl
   assert.equal(subscription?.target, page.body, 'Dynamic form changes must be observed');
   assert.equal(subscription.options.characterData, true);
   const click = (target, isTrusted = true) => listeners.filter((l) => l.type === 'click').forEach((l) => l.fn({ type: 'click', target, isTrusted }));
-  return { sent, fetched, listeners, click, mutate: () => observerCallback() };
+  const key = (target, k = 'Enter') => listeners.filter((l) => l.type === 'keydown').forEach((l) => l.fn({ type: 'keydown', key: k, target, isTrusted: true }));
+  return { sent, fetched, listeners, click, key, mutate: () => observerCallback() };
 }
 
 test('script never cancels or intercepts the signing submit', () => {
@@ -188,11 +197,18 @@ test('removes both marker spellings and updates the disclosure line', () => {
   assert.equal(fieldB.textContent, 'Titel ');
 });
 
-test('custom labels are text values, including quotes and markup-like text', () => {
-  const label = 'Ja, "ich" <bestätige> diesen Test';
+test('custom labels arrive verbatim, including quotes, ampersands and markup-like text', () => {
+  const label = 'Kosten & "Provision" <b>\'zahlungspflichtig\'</b> </script>';
   const page = buildPage();
   run(page, { label });
   assert.equal(page.drawerLabel.nodeValue, label);
+});
+
+test('a label that equals a DocuSeal text does not loop the observer', () => {
+  const page = buildPage({ drawerText: 'Abschließen' });
+  const r = run(page, { label: 'Abschließen' });
+  r.mutate(); r.mutate(); r.mutate();
+  assert.equal(page.drawerLabel.writes, 0, 'no write when the text already equals the label');
 });
 
 test('click on the labelled button reports what was shown to the own server', () => {
@@ -203,7 +219,7 @@ test('click on the labelled button reports what was shown to the own server', ()
   const { url, body, type } = r.sent[0];
   assert.equal(url, '/okorn/button_evidence');
   assert.equal(type, 'application/json');
-  assert.equal(body.slug, 'AbCdEf12');
+  assert.equal(body.token, 'signiertes-token--abc');
   assert.equal(body.text, LABEL);
   assert.equal(body.rendered, LABEL.toUpperCase());
   assert.equal(body.kind, 'drawer');
@@ -212,8 +228,21 @@ test('click on the labelled button reports what was shown to the own server', ()
   assert.equal(body.covered, false);
   assert.equal(body.is_trusted, true);
   assert.equal(body.style.text_transform, 'uppercase');
-  assert.deepEqual(body.viewport, { w: 390, h: 844 });
-  assert.ok(!('lang' in body) && !('user_agent' in body), 'no extra browser data beyond the button');
+  assert.deepEqual(body.rect, { w: 360, h: 48 });
+  for (const field of ['slug', 'lang', 'user_agent', 'viewport', 'dpr', 'orientation', 'path', 'client_ts', 'top_element']) {
+    assert.ok(!(field in body), `no ${field}: only data about the button`);
+  }
+});
+
+test('Enter inside the form reports the drawer button (completion without click)', () => {
+  const input = new El('input');
+  const page = buildPage({ extra: [input] });
+  const r = run(page);
+  r.key(input);
+  r.key(input, 'a');
+  assert.equal(r.sent.length, 1);
+  assert.equal(r.sent[0].body.event_type, 'keydown_enter');
+  assert.equal(r.sent[0].body.text, LABEL);
 });
 
 test('reports covered buttons, header clicks and unpatched completion buttons', () => {
@@ -222,7 +251,6 @@ test('reports covered buttons, header clicks and unpatched completion buttons', 
   const r = run(page, { topElement: overlay });
   r.click(page.drawer);
   assert.equal(r.sent[0].body.covered, true);
-  assert.equal(r.sent[0].body.top_element, 'DIV#cookie');
   r.click(page.header);
   assert.equal(r.sent[1].body.kind, 'header');
 });
@@ -252,6 +280,8 @@ test('falls back to keepalive fetch and never throws into the signing flow', () 
 
 test('view renders the form in German and hides the header button when the label is active', () => {
   assert.match(view, /okorn_button = OkornButtonLabel\.compute\(@submitter\)/);
+  assert.match(view, /okorn_token = OkornEvidence::RailsHooks\.served_button\(request, @submitter, okorn_button\)/);
+  assert.ok(!/<%= j /.test(block[1]), 'no double-escaping j helper inside the script');
   assert.match(view, /I18n\.with_locale\(okorn_button \? :de : I18n\.locale\) \{ render 'submit_form\/submission_form'/);
   assert.match(view, /\.complete-button \{ display: none !important; \}/);
   assert.match(view, /<% if okorn_button %>/);

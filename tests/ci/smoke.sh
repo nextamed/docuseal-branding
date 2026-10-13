@@ -29,7 +29,8 @@ curl -fsS http://localhost:3000/up >/dev/null || { echo "DocuSeal nicht erreichb
 
 runner() {
   docker exec -e OKORN_CI=1 -e DESKTOP_SLUG="${DESKTOP_SLUG:-}" -e LANDSCAPE_SLUG="${LANDSCAPE_SLUG:-}" \
-    -e PLAIN_SLUG="${PLAIN_SLUG:-}" -e E2E="${E2E_DONE:-0}" -w /app "$NAME" /app/bin/bundle exec rails runner "$@"
+    -e PLAIN_SLUG="${PLAIN_SLUG:-}" -e DESKTOP_SUBMISSION_ID="${DESKTOP_SUBMISSION_ID:-}" -e E2E="${E2E_DONE:-0}" \
+    -w /app "$NAME" /app/bin/bundle exec rails runner "$@"
 }
 
 echo "1) Initializer geladen"
@@ -48,7 +49,8 @@ echo "$SEED"
 DESKTOP_SLUG=$(echo "$SEED" | python3 -c 'import json,sys; print(json.load(sys.stdin)["desktop"])')
 LANDSCAPE_SLUG=$(echo "$SEED" | python3 -c 'import json,sys; print(json.load(sys.stdin)["landscape"])')
 PLAIN_SLUG=$(echo "$SEED" | python3 -c 'import json,sys; print(json.load(sys.stdin)["plain"])')
-export DESKTOP_SLUG LANDSCAPE_SLUG PLAIN_SLUG
+DESKTOP_SUBMISSION_ID=$(echo "$SEED" | python3 -c 'import json,sys; print(json.load(sys.stdin)["desktop_submission_id"])')
+export DESKTOP_SLUG LANDSCAPE_SLUG PLAIN_SLUG DESKTOP_SUBMISSION_ID
 
 echo "4) Signaturseite mit Browsersprache fr"
 curl -fsS -H 'Accept-Language: fr-FR,fr;q=0.9' "http://localhost:3000/s/$DESKTOP_SLUG" > "$ART/desktop.html"
@@ -58,14 +60,13 @@ grep -q 'complete-button { display: none !important; }' "$ART/desktop.html" || {
 curl -fsS -H 'Accept-Language: fr-FR,fr;q=0.9' "http://localhost:3000/s/$PLAIN_SLUG" > "$ART/plain.html"
 if grep -q 'okorn_payment_notice_button' "$ART/plain.html"; then echo "Buttonloesung ohne Ausloeser aktiv"; exit 1; fi
 
-echo "5) Klick-Nachweis per curl (is_trusted=false)"
-body=$(printf '{"v":1,"slug":"%s","text":"%s","rendered":"%s","is_trusted":false,"kind":"drawer"}' \
-  "$DESKTOP_SLUG" 'Zahlungspflichtig / provisionspflichtig abschließen' 'ZAHLUNGSPFLICHTIG / PROVISIONSPFLICHTIG ABSCHLIESSEN')
+echo "5) Klick-Nachweis ohne gueltiges Token wird nicht protokolliert"
+body='{"v":2,"token":"gefaelscht","text":"Zahlungspflichtig / provisionspflichtig abschließen","is_trusted":true}'
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data "$body" http://localhost:3000/okorn/button_evidence)
 [ "$code" = "204" ] || { echo "Beacon erwartet 204, bekam $code"; exit 1; }
 
 echo "6) Mail-Protokoll (ohne SMTP: Testzustellung)"
-runner "SubmitterMailer.invitation_email(Submitter.find_by!(slug: ENV['DESKTOP_SLUG'])).deliver_now"
+runner "SubmitterMailer.invitation_email(Submitter.find_by!(slug: ENV['DESKTOP_SLUG'])).deliver_now!"
 
 if [ "$E2E" = "--e2e" ]; then
   echo "7) Browser-Test"

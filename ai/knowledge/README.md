@@ -112,6 +112,14 @@ Kopfzeilen-Abschluss ausgeblendet, Textknoten-Umbeschriftung inkl.
 Sitzung nicht freigegeben und steht aus. Beleg: Ruby-/JS-Tests, CI-Smoke-
 und Browser-Test im Wegwerf-Container. Nicht in Produktion ausgerollt; vor
 jedem Redeploy Container-Logs für laufende Streitfälle sichern.
+Nach adversarialem Review (gleicher Tag) Format v2: gesalzener Commitment-Hash
+statt Klartext in der Kette (Schwärzen ohne Kettenbruch), Slugs nur als
+SHA-256, Zeitstempel und Prüfung unter Dateisperre, abgebrochene Zeilen in
+Quarantäne, Klick-Nachweis nur mit signiertem Token einer ausgelieferten
+Seite plus Drosselung, `mail_attempt` vor der Zustellung (DocuSeal nutzt
+`deliver!`), Export schwärzt fremde Vorgänge, Anker im Bucket COMPLIANCE,
+Daten GOVERNANCE. Grenze: Der Klick-Nachweis bleibt Selbstauskunft des
+Browsers; maßgeblich ist die serverseitig protokollierte Auslieferung.
 
 ## Offene Nachweise
 

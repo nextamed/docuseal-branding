@@ -179,6 +179,7 @@
     <div class="relative md:mx-32">
       <%# OKorn-Override: bei aktiver Buttonloesung das Formular immer auf Deutsch rendern (die Browsersprache wuerde sonst andere Button-Texte liefern). %>
       <% okorn_button = OkornButtonLabel.compute(@submitter) %>
+      <% okorn_token = OkornEvidence::RailsHooks.served_button(request, @submitter, okorn_button) %>
       <%= I18n.with_locale(okorn_button ? :de : I18n.locale) { render 'submit_form/submission_form', attachments_index: @attachments_index, submitter: @submitter, prefill_signature: @prefill_signature, prefill_initials: @prefill_initials, current_user_data: @current_user_data, configs: @form_configs, dry_run: local_assigns[:dry_run], expand: local_assigns[:expand], scroll_padding: local_assigns.fetch(:scroll_padding, turbo_native_app? ? '-80px' : '-110px'), schema: schema } %>
     </div>
   </div>
@@ -210,9 +211,11 @@
         (nur nodeValue, Vue-Knoten bleiben erhalten). "Einreichen" zeigt
         DocuSeal im Handy-Querformat auf jedem Schritt; dort steht die
         Beschriftung bewusst auch auf Zwischenschritten
-      - ein Klick auf eine Abschluss-Schaltflaeche meldet an den eigenen
-        Server (POST /okorn/button_evidence, same-origin), was tatsaechlich
-        darauf stand; der Ablauf wird dabei weder angehalten noch veraendert
+      - ein Klick (oder Enter) auf eine Abschluss-Schaltflaeche meldet an den
+        eigenen Server (POST /okorn/button_evidence, same-origin), was
+        tatsaechlich darauf stand; gebunden an diese Auslieferung per signiertem
+        Token (OkornEvidence::RailsHooks.served_button). Der Ablauf wird dabei
+        weder angehalten noch veraendert
     Nach jedem DocuSeal-Update pruefen: #submit_form_button und .complete-button
     in app/javascript/submission_form/form.vue, i18n-Keys sign_and_complete /
     complete / submit (de), Container #complete_button_container(_scroll). %>
@@ -223,8 +226,8 @@
   </style>
   <script id="okorn_payment_notice_button" nonce="<%= content_security_policy_nonce %>">
     (function () {
-      var LABEL = '<%= j okorn_button.label %>'
-      var SLUG = '<%= j @submitter.slug %>'
+      var LABEL = <%= raw json_escape(okorn_button.label.to_json) %>
+      var TOKEN = <%= raw json_escape(okorn_token.to_json) %>
       var EVIDENCE_URL = '/okorn/button_evidence'
       var TARGETS = ['Unterzeichnen und abschließen', 'Abschließen', 'Einreichen', 'Sign and Complete', 'Complete', 'Submit', 'submit']
       var ROOTS = 'submission-form, #complete_button_container, #complete_button_container_scroll'
@@ -239,13 +242,15 @@
         return !!(el && el.closest && el.closest('button, .font-semibold'))
       }
 
+      // Schreibt nur bei abweichendem Wert, sonst loest jede Zuweisung eine
+      // neue Mutation aus (Endlosschleife, wenn LABEL selbst ein TARGETS-Text ist).
       function patchLabels () {
         var roots = document.querySelectorAll(ROOTS)
         for (var i = 0; i < roots.length; i++) {
           var walker = document.createTreeWalker(roots[i], NodeFilter.SHOW_TEXT)
           var node
           while ((node = walker.nextNode())) {
-            if (TARGETS.indexOf(norm(node.nodeValue)) !== -1 && inButtonOrHint(node)) node.nodeValue = LABEL
+            if (node.nodeValue !== LABEL && TARGETS.indexOf(norm(node.nodeValue)) !== -1 && inButtonOrHint(node)) node.nodeValue = LABEL
           }
         }
       }
@@ -256,8 +261,9 @@
         var node = a.parentElement.firstChild
         if (!node || node.nodeType !== 3) return
         for (var j = 0; j < TARGETS.length; j++) {
-          if (node.nodeValue.indexOf(TARGETS[j]) !== -1) {
-            node.nodeValue = node.nodeValue.split(TARGETS[j]).join(LABEL)
+          if (node.nodeValue.indexOf(TARGETS[j]) !== -1 && node.nodeValue.indexOf(LABEL) === -1) {
+            var next = node.nodeValue.split(TARGETS[j]).join(LABEL)
+            if (next !== node.nodeValue) node.nodeValue = next
             break
           }
         }
@@ -275,13 +281,12 @@
         }
       }
 
-      // Klick-Nachweis: beschreibt synchron die angeklickte Abschluss-Schaltflaeche
-      // und meldet sie dem eigenen Server. Der Klick wird weder abgefangen noch
-      // verzoegert, Fehler werden verschluckt; der Signaturablauf laeuft weiter.
-      function attest (ev) {
+      // Klick-Nachweis: beschreibt synchron die Abschluss-Schaltflaeche und
+      // meldet sie dem eigenen Server (gebunden an diese Auslieferung per TOKEN).
+      // Erfasst wird nur, was die Schaltflaeche betrifft. Der Klick wird weder
+      // abgefangen noch verzoegert, Fehler werden verschluckt.
+      function report (el, type, trusted) {
         try {
-          var el = ev.target && ev.target.closest ? ev.target.closest('button') : null
-          if (!el) return
           var text = norm(el.textContent)
           var header = !!(el.classList && el.classList.contains('complete-button'))
           if (text !== LABEL && TARGETS.indexOf(text) === -1 && !header) return
@@ -290,11 +295,10 @@
           var top = document.elementFromPoint ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null
           var form = document.querySelector('submission-form')
           var rec = {
-            v: 1,
-            slug: SLUG,
-            event_type: ev.type,
-            is_trusted: !!ev.isTrusted,
-            label_expected: LABEL,
+            v: 2,
+            token: TOKEN,
+            event_type: type,
+            is_trusted: !!trusted,
             text: text,
             rendered: norm(el.innerText),
             kind: header ? 'header' : (el.id === 'submit_form_button' ? 'drawer' : 'other'),
@@ -302,10 +306,7 @@
             disabled: !!el.disabled,
             visible: typeof el.checkVisibility === 'function' ? el.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : null,
             covered: !!(top && top !== el && !el.contains(top)),
-            top_element: top ? top.tagName + (top.id ? '#' + top.id : '') : null,
-            rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
-            viewport: { w: window.innerWidth, h: window.innerHeight },
-            dpr: window.devicePixelRatio,
+            rect: { w: Math.round(r.width), h: Math.round(r.height) },
             style: {
               font_size: cs.fontSize,
               font_weight: cs.fontWeight,
@@ -316,10 +317,7 @@
               display: cs.display,
               visibility: cs.visibility
             },
-            form_language: form && form.dataset ? form.dataset.language : null,
-            client_ts: new Date().toISOString(),
-            path: location.pathname,
-            orientation: window.screen && screen.orientation ? screen.orientation.type : null
+            form_language: form && form.dataset ? form.dataset.language : null
           }
           var body = JSON.stringify(rec)
           var sent = false
@@ -330,13 +328,33 @@
         } catch (e) {}
       }
 
+      function onClick (ev) {
+        try {
+          var el = ev.target && ev.target.closest ? ev.target.closest('button') : null
+          if (el) report(el, ev.type, ev.isTrusted)
+        } catch (e) {}
+      }
+
+      // Abschluss per Enter (z. B. im Datumsfeld) loest keinen Klick aus:
+      // dann die Schaltflaeche des Formulars beschreiben.
+      function onKeydown (ev) {
+        try {
+          if (ev.key !== 'Enter') return
+          var form = document.querySelector('submission-form')
+          if (!form || !form.contains(ev.target)) return
+          var el = document.getElementById('submit_form_button')
+          if (el) report(el, 'keydown_enter', ev.isTrusted)
+        } catch (e) {}
+      }
+
       function patch () {
         patchLabels()
         patchDisclosure()
         stripMarkers()
       }
 
-      document.addEventListener('click', attest, true)
+      document.addEventListener('click', onClick, true)
+      document.addEventListener('keydown', onKeydown, true)
       new MutationObserver(patch).observe(document.body, {
         childList: true,
         subtree: true,

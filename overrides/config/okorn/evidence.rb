@@ -7,25 +7,36 @@
 #
 # Ablage: <WORKDIR>/okorn-evidence (persistentes DocuSeal-Volume)
 #   evidence-YYYY-MM-DD.jsonl   ein Eintrag pro Zeile, Tag in UTC
-#   chain_head.json             letzter Eintrag (seq, hash)
+#   chain_head.json             Zwischenspeicher des letzten Eintrags; maßgeblich
+#                               ist immer die letzte vollständige Zeile
 #   mail/YYYY-MM-DD/*.eml       Archivkopien ausgehender Unterzeichner-Mails
+#   quarantine/                 Reste abgebrochener Schreibvorgänge
 #
-# Jeder Eintrag enthält den Hash des Vorgängers ("prev") und seinen eigenen
-# SHA-256 über die kanonische JSON-Form ohne "hash". Eine nachträgliche
-# Änderung, Einfügung oder Löschung bricht die Kette; verify meldet sie.
-# Gegen das Neuschreiben der ganzen Kette sichert die Auslagerung in
-# schreibgeschützten Speicher (Shipper, Object Lock).
+# Kettenformat (v2): Verkettet wird nicht der Klartext, sondern ein gesalzener
+# Hash der Daten ("commit" = SHA-256(salt + kanonisches JSON von data)).
+# "hash" = SHA-256 über {v, seq, ts, event, meta, commit, prev}. Dadurch
+#   - lassen sich fremde Einträge beim Export schwärzen (data und salt weg,
+#     commit bleibt) und die Kette bleibt trotzdem nachrechenbar,
+#   - lassen sich Daten nach Ablauf der Aufbewahrung löschen (redact_before!),
+#     ohne die Kette zu brechen.
+#
+# Aussagekraft: intern konsistent; Änderungen an Einträgen vor dem letzten
+# ausgelagerten Anker (Shipper, Object Lock) sind nachweisbar. Abschneiden
+# oder Neuschreiben nach dem letzten Anker ist nur durch häufige Anker
+# begrenzbar.
 
 require 'json'
 require 'digest'
 require 'fileutils'
 require 'time'
 require 'socket'
+require 'securerandom'
 
 module OkornEvidence
-  SCHEMA = 1
+  SCHEMA = 2
   GENESIS = '0' * 64
   MAX_STRING = 2_000
+  HASHED_KEYS = %w[v seq ts event meta commit prev].freeze
   MUTEX = Mutex.new
 
   module_function
@@ -41,50 +52,87 @@ module OkornEvidence
     File.join(ENV.fetch('WORKDIR', '/data/docuseal'), 'okorn-evidence')
   end
 
-  def record(event, data = {}, now: Time.now.utc)
+  # now: nur für Tests; im Betrieb wird die Zeit erst unter der Sperre gelesen,
+  # damit Reihenfolge der Einträge und Tagesdatei zusammenpassen.
+  def record(event, data = {}, now: nil)
     return unless enabled?
 
-    MUTEX.synchronize do
-      FileUtils.mkdir_p(dir)
-
-      File.open(File.join(dir, '.lock'), File::RDWR | File::CREAT, 0o640) do |lock|
-        lock.flock(File::LOCK_EX)
-
-        head = read_head
-        entry = {
-          'v' => SCHEMA,
-          'seq' => head['seq'] + 1,
-          'ts' => now.utc.iso8601(6),
-          'event' => event.to_s,
-          'data' => sanitize(data),
-          'meta' => meta,
-          'prev' => head['hash']
-        }
-        entry['hash'] = entry_hash(entry)
-
-        line = "#{canonical_json(entry)}\n"
-        File.open(day_path(now), 'a', 0o640) do |file|
-          file.write(line)
-          file.flush
-          file.fsync
-        end
-
-        write_head(entry, day_path(now))
-        log_line(line)
-
-        entry
-      end
+    with_lock(File::LOCK_EX) do
+      time = (now || Time.now).utc
+      repair_tail!(time)
+      append(event, data, time)
     end
   rescue StandardError => e
     report_error(e)
     nil
   end
 
-  # Speichert Rohdaten (z. B. eine E-Mail) unveränderlich neben der Kette und
-  # liefert Pfad und SHA-256 für den Kettenrecord.
-  def store_raw(kind, bytes, extension:, now: Time.now.utc)
+  def with_lock(mode)
+    MUTEX.synchronize do
+      FileUtils.mkdir_p(dir)
+      File.open(File.join(dir, '.lock'), File::RDWR | File::CREAT, 0o640) do |lock|
+        lock.flock(mode)
+        yield
+      end
+    end
+  end
+
+  def append(event, data, time)
+    head = current_head
+    salt = SecureRandom.hex(16)
+    clean = sanitize(data)
+    entry = {
+      'v' => SCHEMA, 'seq' => head['seq'] + 1, 'ts' => time.iso8601(6), 'event' => event.to_s,
+      'meta' => meta, 'commit' => commitment(salt, clean), 'prev' => head['hash']
+    }
+    entry['hash'] = entry_hash(entry)
+    entry['data'] = clean
+    entry['salt'] = salt
+
+    path = day_path(time)
+    File.open(path, 'a', 0o640) do |file|
+      file.write("#{canonical_json(entry)}\n")
+      file.flush
+      file.fsync
+    end
+    write_head(entry, path)
+    log_line(entry)
+
+    entry
+  end
+
+  # Entfernt eine abgebrochene letzte Zeile (Absturz mitten im Schreiben),
+  # legt sie in quarantine/ ab und protokolliert den Vorgang in der Kette.
+  def repair_tail!(time)
+    path = Dir.glob(File.join(dir, 'evidence-*.jsonl')).max
+    return unless path && File.size?(path)
+
+    fragment = nil
+    File.open(path, 'r+') do |file|
+      file.seek(-1, IO::SEEK_END)
+      next if file.read(1) == "\n"
+
+      content = File.binread(path)
+      keep = content.rindex("\n") ? content.rindex("\n") + 1 : 0
+      fragment = content.byteslice(keep..)
+      file.truncate(keep)
+    end
+    return unless fragment
+
+    quarantine = File.join(dir, 'quarantine', "#{File.basename(path)}.#{time.strftime('%Y%m%dT%H%M%S%6N')}.part")
+    FileUtils.mkdir_p(File.dirname(quarantine))
+    File.binwrite(quarantine, fragment)
+    append('recovered_partial_write', { 'file' => File.basename(path), 'bytes' => fragment.bytesize,
+                                        'sha256' => Digest::SHA256.hexdigest(fragment),
+                                        'quarantine' => quarantine.delete_prefix("#{dir}/") }, time)
+  end
+
+  # Speichert Rohdaten (z. B. eine E-Mail) schreibgeschützt (0440) neben der
+  # Kette und liefert Pfad und SHA-256 für den Kettenrecord.
+  def store_raw(kind, bytes, extension:, now: nil)
+    time = (now || Time.now).utc
     sha = Digest::SHA256.hexdigest(bytes)
-    rel = File.join(kind.to_s, now.strftime('%Y-%m-%d'), "#{now.strftime('%H%M%S%6N')}-#{sha[0, 16]}.#{extension}")
+    rel = File.join(kind.to_s, time.strftime('%Y-%m-%d'), "#{time.strftime('%H%M%S%6N')}-#{sha[0, 16]}.#{extension}")
     path = File.join(dir, rel)
 
     FileUtils.mkdir_p(File.dirname(path))
@@ -100,11 +148,19 @@ module OkornEvidence
     { 'error' => e.class.name, 'sha256' => sha }.compact
   end
 
+  # Prüft die ganze Kette unter einer geteilten Sperre (Schnappschuss).
   def verify(base = dir)
+    return verify_unlocked(base) unless base == dir && File.directory?(base)
+
+    with_lock(File::LOCK_SH) { verify_unlocked(base) }
+  end
+
+  def verify_unlocked(base)
     errors = []
     prev = GENESIS
     seq = 0
     count = 0
+    redacted = 0
     first_ts = nil
     last_ts = nil
 
@@ -117,8 +173,13 @@ module OkornEvidence
         errors << "#{where} prev passt nicht zum Vorgänger" if entry['prev'] != prev
         errors << "#{where} hash stimmt nicht (Eintrag verändert)" if entry['hash'] != entry_hash(entry)
 
-        raw = entry.dig('data', 'raw')
-        errors.concat(verify_raw(base, raw, where)) if raw.is_a?(Hash) && raw['path']
+        if entry.key?('data')
+          errors << "#{where} Daten passen nicht zum commit (Inhalt verändert)" if entry['commit'] != commitment(entry['salt'], entry['data'])
+          raw = entry.dig('data', 'raw')
+          errors.concat(verify_raw(base, raw, where)) if raw.is_a?(Hash) && raw['path']
+        else
+          redacted += 1
+        end
 
         prev = entry['hash']
         seq = entry['seq'].to_i
@@ -130,12 +191,7 @@ module OkornEvidence
       end
     end
 
-    head = read_head(base)
-    if count.positive? && (head['hash'] != prev || head['seq'] != seq)
-      errors << "chain_head.json passt nicht zum letzten Eintrag (seq #{head['seq']} statt #{seq})"
-    end
-
-    { ok: errors.empty?, entries: count, first_ts:, last_ts:, last_seq: seq, last_hash: prev, errors: }
+    { ok: errors.empty?, entries: count, redacted:, first_ts:, last_ts:, last_seq: seq, last_hash: prev, errors: }
   end
 
   def entries(base = dir)
@@ -144,24 +200,73 @@ module OkornEvidence
     end
   end
 
-  # Alle Einträge zu einem Vorgang (Submission-ID) oder Unterzeichner-Slug,
-  # dazu die Prüfung der Gesamtkette. Für Gericht/Anwalt: zusammen mit den
-  # referenzierten .eml-Dateien und dem ausgelagerten chain_head weitergeben.
+  # Export zu einem Vorgang (Submission-ID) oder Unterzeichner-Slug. Fremde
+  # Einträge werden geschwärzt (ohne data/salt), bleiben aber in der Kette,
+  # damit Dritte die Verkettung bis zum Anker nachrechnen können.
   def export(submission_id: nil, submitter_slug: nil, base: dir)
     wanted_id = submission_id&.to_i
-    selected = entries(base).select do |entry|
-      ids = collect_values(entry['data'], %w[submission_id])
-      slugs = collect_values(entry['data'], %w[slug submitter_slug])
+    wanted_slug = submitter_slug && slug_digest(submitter_slug)
 
-      (wanted_id && ids.map(&:to_i).include?(wanted_id)) || (submitter_slug && slugs.include?(submitter_slug))
+    chain = entries(base).map do |entry|
+      next entry if relevant?(entry, wanted_id, wanted_slug)
+
+      entry.reject { |key, _| %w[data salt].include?(key) }
     end.to_a
 
-    { 'exported_at' => Time.now.utc.iso8601, 'filter' => { 'submission_id' => wanted_id, 'submitter_slug' => submitter_slug }.compact,
-      'verify' => verify(base), 'entries' => selected }
+    { 'exported_at' => Time.now.utc.iso8601, 'schema' => SCHEMA,
+      'filter' => { 'submission_id' => wanted_id, 'slug_sha256' => wanted_slug }.compact,
+      'verify' => verify(base), 'matching' => chain.count { |entry| entry.key?('data') }, 'chain' => chain }
+  end
+
+  def relevant?(entry, wanted_id, wanted_slug)
+    data = entry['data']
+    return false unless data.is_a?(Hash)
+
+    refs = [data['submitter'], data['submission']].compact
+    refs += Array(data.dig('file', 'attached_to'))
+    refs.select! { |ref| ref.is_a?(Hash) }
+
+    (wanted_id && refs.any? { |ref| ref['submission_id'].to_i == wanted_id }) ||
+      (wanted_slug && refs.any? { |ref| ref['slug_sha256'] == wanted_slug })
+  end
+
+  # Schwärzt Einträge vor dem Stichtag (Ablauf der Aufbewahrung): data und salt
+  # werden entfernt, referenzierte .eml-Dateien gelöscht. Die Kette bleibt prüfbar.
+  def redact_before!(time, base: dir)
+    cutoff = time.utc.iso8601(6)
+    removed = 0
+
+    with_lock(File::LOCK_EX) do
+      Dir.glob(File.join(base, 'evidence-*.jsonl')).sort.each do |path|
+        lines = File.readlines(path).map do |line|
+          entry = JSON.parse(line)
+          next line unless entry['ts'] < cutoff && entry.key?('data')
+
+          raw = entry.dig('data', 'raw', 'path')
+          FileUtils.rm_f(File.join(base, raw)) if raw
+          removed += 1
+          "#{canonical_json(entry.reject { |key, _| %w[data salt].include?(key) })}\n"
+        end
+        tmp = "#{path}.tmp"
+        File.write(tmp, lines.join)
+        File.rename(tmp, path)
+      end
+      append('redacted_before', { 'cutoff' => cutoff, 'entries' => removed }, Time.now.utc)
+    end
+
+    removed
+  end
+
+  def commitment(salt, data)
+    Digest::SHA256.hexdigest("#{salt}#{canonical_json(data)}")
   end
 
   def entry_hash(entry)
-    Digest::SHA256.hexdigest(canonical_json(entry.reject { |key, _| key == 'hash' }))
+    Digest::SHA256.hexdigest(canonical_json(entry.slice(*HASHED_KEYS)))
+  end
+
+  def slug_digest(slug)
+    Digest::SHA256.hexdigest("okorn-slug:#{slug}")
   end
 
   def canonical_json(value)
@@ -184,16 +289,25 @@ module OkornEvidence
       value.each_with_object({}) do |(key, item), acc|
         next if item.nil?
 
-        acc[key.to_s] = sanitize(item, depth + 1)
+        acc[clean_string(key.to_s)] = sanitize(item, depth + 1)
       end
     when Array then value.first(200).map { |item| sanitize(item, depth + 1) }
-    when String then value.length > MAX_STRING ? "#{value[0, MAX_STRING]}…[gekürzt]" : value
+    when String then truncate(clean_string(value))
     when Symbol then value.to_s
     when Integer, Float, TrueClass, FalseClass then value
     when Time then value.utc.iso8601(6)
     else
-      value.respond_to?(:iso8601) ? value.iso8601 : value.to_s[0, MAX_STRING]
+      truncate(clean_string(value.respond_to?(:iso8601) ? value.iso8601 : value.to_s))
     end
+  end
+
+  def clean_string(value)
+    string = value.dup.force_encoding(Encoding::UTF_8)
+    string.valid_encoding? ? string : string.scrub('�')
+  end
+
+  def truncate(string, max = MAX_STRING)
+    string.length > max ? "#{string[0, max]}…[gekürzt]" : string
   end
 
   def meta
@@ -205,8 +319,8 @@ module OkornEvidence
     }.compact
   end
 
-  def day_path(now)
-    File.join(dir, "evidence-#{now.utc.strftime('%Y-%m-%d')}.jsonl")
+  def day_path(time)
+    File.join(dir, "evidence-#{time.utc.strftime('%Y-%m-%d')}.jsonl")
   end
 
   def head_path(base = dir)
@@ -214,28 +328,34 @@ module OkornEvidence
   end
 
   def read_head(base = dir)
-    head = JSON.parse(File.read(head_path(base)))
-    return head if head['seq'].is_a?(Integer) && head['hash'].is_a?(String)
-
-    rebuild_head(base)
+    JSON.parse(File.read(head_path(base)))
   rescue Errno::ENOENT, JSON::ParserError
-    rebuild_head(base)
+    last_entry_head(base)
   end
 
-  # Fallback, falls chain_head.json fehlt oder kaputt ist: letzter Eintrag der
-  # jüngsten Tagesdatei.
-  def rebuild_head(base = dir)
-    last = Dir.glob(File.join(base, 'evidence-*.jsonl')).max
-    line = last && File.readlines(last).reverse.find { |item| !item.strip.empty? }
-    entry = line ? JSON.parse(line) : nil
+  # Maßgeblich ist die letzte vollständige Zeile der jüngsten Tagesdatei;
+  # chain_head.json ist nur Zwischenspeicher.
+  def current_head(base = dir)
+    last_entry_head(base)
+  end
 
-    entry ? { 'seq' => entry['seq'], 'hash' => entry['hash'] } : { 'seq' => 0, 'hash' => GENESIS }
+  def last_entry_head(base = dir)
+    last = Dir.glob(File.join(base, 'evidence-*.jsonl')).max
+    return { 'seq' => 0, 'hash' => GENESIS } unless last
+
+    line = File.readlines(last).reverse.find { |item| item.end_with?("\n") && !item.strip.empty? }
+    entry = line && JSON.parse(line)
+    entry ? { 'seq' => entry['seq'], 'hash' => entry['hash'], 'ts' => entry['ts'] } : { 'seq' => 0, 'hash' => GENESIS }
   end
 
   def write_head(entry, file)
     tmp = "#{head_path}.tmp"
-    File.write(tmp, JSON.generate('seq' => entry['seq'], 'hash' => entry['hash'], 'ts' => entry['ts'],
-                                  'file' => File.basename(file)))
+    File.open(tmp, 'w', 0o640) do |io|
+      io.write(JSON.generate('seq' => entry['seq'], 'hash' => entry['hash'], 'ts' => entry['ts'],
+                             'file' => File.basename(file)))
+      io.flush
+      io.fsync
+    end
     File.rename(tmp, head_path)
   end
 
@@ -247,22 +367,11 @@ module OkornEvidence
     []
   end
 
-  def collect_values(value, keys, acc = [])
-    case value
-    when Hash
-      value.each do |key, item|
-        acc << item if keys.include?(key) && !item.nil?
-        collect_values(item, keys, acc)
-      end
-    when Array then value.each { |item| collect_values(item, keys, acc) }
-    end
-    acc
-  end
-
-  def log_line(line)
+  # Ins Container-Log nur die Kennung, nie den Inhalt.
+  def log_line(entry)
     return unless defined?(::Rails) && ::Rails.respond_to?(:logger) && ::Rails.logger
 
-    ::Rails.logger.info("[okorn-evidence] #{line.chomp}")
+    ::Rails.logger.info("[okorn-evidence] seq=#{entry['seq']} event=#{entry['event']} hash=#{entry['hash']}")
   end
 
   def report_error(error)
