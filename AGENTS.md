@@ -11,12 +11,17 @@ Upstream-Dateien beim Versionswechsel gegen den neuen Tag vergleichen. Keine
 unabhängige Anwendung oder neue Signaturlogik aus dem Overlay machen.
 `ai/skills/docuseal-branding-develop/SKILL.md` führt durch die Prüfung.
 
+Das Beweisprotokoll (`overrides/config/okorn`, Initializer `zz_okorn_evidence`) ist
+reiner Beobachter: es darf Signaturablauf, Formular und Mailversand weder
+verändern noch blockieren, Fehler nur loggen. Button-Beschriftung nur über
+`OkornButtonLabel`, damit Anzeige und Protokoll übereinstimmen.
 Attribution, vorhandene Lizenzangaben und Sicherheitsmechanismen erhalten.
 Die rechtliche Bewertung einer Formulierung ist nicht durch einen UI-Test belegt.
 Öffentliche Dateien enthalten keine privaten Betriebszugänge oder Beispieldaten.
 
 ## Prüfen und betreiben
 
+`ruby tests/okorn_evidence_test.rb` prüft Beweiskette und Beschriftungslogik;
 `node --test tests/overlay.test.mjs` prüft die tatsächliche JavaScript-Ergänzung
 in isolierten DOM-Fixtures und wichtige Overlay-Grenzen. Der vorhandene
 Image-Build bleibt erforderlich; sichtbare Empfängeroberflächen brauchen bei

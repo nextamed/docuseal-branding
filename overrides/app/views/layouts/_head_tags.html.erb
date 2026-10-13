@@ -1,6 +1,10 @@
 <%# OKorn-Override: neutraler Browser-Tab-Titel statt DocuSeal-Produktname
-    (Upstream 3.0.3: 'DocuSeal' bzw. 'DocuSeal | Open Source Document Signing'). %>
+    (Upstream 3.3.1: 'DocuSeal' bzw. 'DocuSeal | Open Source Document Signing'). %>
 <title>
-  <%= content_for(:html_title) || (signed_in? ? 'OKorn Immobilien' : 'OKorn Immobilien — Signatur-Plattform') %>
+  <%= turbo_native_app? ? content_for(:native_title) : (content_for(:html_title) || (signed_in? ? 'OKorn Immobilien' : 'OKorn Immobilien — Signatur-Plattform')) %>
 </title>
 <%= render 'shared/meta' %>
+<% if turbo_native_app? %>
+  <meta name="turbo-cache-control" content="no-preview">
+  <%= render 'layouts/native_styles' %>
+<% end %>
