@@ -18,14 +18,14 @@ DocuSeal OSS wird unveraendert als Basis-Image verwendet. Die Version ist im Doc
 4. **Neutrale Titel/Metas** (`overrides/app/views/layouts/_head_tags.html.erb`, `overrides/app/views/shared/_meta.html.erb`) — Browser-Tab-Titel „OKorn Immobilien — Signatur-Plattform" statt DocuSeal-Produktname; OpenGraph/Description neutralisiert, Twitter-Handles entfernt, `og:site_name` = OKorn Immobilien. Favicon-Links unveraendert. Die Tab-Titel der Empfaengerseiten (Start-Form, Submit-Form, E-Mail-2FA) setzt seit Upstream 3.3.1 das Mini-Partial `shared/_html_title.html.erb` („… | OKorn Immobilien").
 5. **Neutrale Startseite** (`overrides/app/views/pages/landing.html.erb`, Full-File-Override, Basis 3.3.1 — upstream seit 3.0.3 unveraendert) — ersetzt das DocuSeal-Produkt-Marketing durch „Signatur-Plattform / OKorn Immobilien" mit kurzem Empfaenger-Hinweis; AGPL-Attribution am Seitenende bleibt erhalten. Dazu `shared/_title.html.erb`: Navbar-Schriftzug „DocuSeal" → „OKorn Immobilien".
 6. **Builder-Logo-CSS-Swap** (`overrides/app/views/templates/edit.html.erb`, `overrides/app/views/templates_preview/show.html.erb`) — Full-File-Overrides der Builder-Mount-Views: Das Editor-Logo kommt aus dem JS-Bundle (`template_builder/logo.vue`) und ist nicht per Partial overridebar; ein CSS-Block blendet das SVG aus und zeigt `/logo.png` als Hintergrund des `<a href="/">`.
-7. **Button-Loesung § 312j Abs. 3 BGB** (`overrides/app/views/submit_form/show.html.erb`) — Full-File-Override der Hosted-Form-View (Basis: Upstream-Tag 3.3.1, siehe Kommentar-Block am Dateiende). Ein MutationObserver-Snippet schreibt den finalen Abschluss-Button (`#submit_form_button`) und die E-Signatur-Einwilligungszeile um. **Drei Trigger** (gelten pro Submitter/Rolle):
-   1. **Marker im Template** (direkt im DocuSeal-Editor nutzbar, kein Chatbot noetig): `##button: Eigener Text##` oder `##button->Eigener Text##` in Feldname, Feldtitel oder Feldbeschreibung eines Feldes der jeweiligen Rolle → Button-Text = exakt dieser Text. Sichtbare Marker werden aus der Anzeige entfernt.
-   2. **Keyword**: Ein Feldname/-titel der Rolle enthaelt „zahlungspflichtig" → Standard-Text „Zahlungspflichtig / provisionspflichtig abschließen".
-   3. **API-Metadata** `payment_notice` am Submitter (setzt ok_manage bei `requiresPaymentNotice=true`, Feature 023) → Standard-Text.
+7. **Button-Loesung § 312j Abs. 3 BGB** (`overrides/app/views/submit_form/show.html.erb`, `overrides/config/okorn/button_label.rb`) — Full-File-Override der Hosted-Form-View (Basis: Upstream-Tag 3.3.1). Die Beschriftung bestimmt `OkornButtonLabel` als einzige Quelle fuer Anzeige und Beweisprotokoll. **Drei Ausloeser** (gelten pro Submitter/Rolle):
+   1. **Marker im Template**: `##button: Eigener Text##` oder `##button->Eigener Text##` in Feldname, Feldtitel oder Feldbeschreibung eines Feldes der Rolle → Button-Text = exakt dieser Text. Sichtbare Marker werden aus der Anzeige entfernt.
+   2. **API-Metadata** `payment_notice` am Submitter (setzt ok_manage bei `requiresPaymentNotice=true`, Feature 023) → Standard-Text „Zahlungspflichtig / provisionspflichtig abschließen".
+   3. **Keyword**: Ein Feldname/-titel der Rolle enthaelt „zahlungspflichtig" → Standard-Text.
 
-   Vorgaenge ohne Trigger bleiben unveraendert.
+   Bei aktivem Ausloeser (seit 2026-10-13): Formular immer auf Deutsch (unabhaengig von der Browsersprache), Kopfzeilen-Schaltflaeche „Abschließen" ausgeblendet, Umbeschriftung aller Abschluss-Texte („Unterzeichnen und abschließen", „Abschließen", „Einreichen" im Handy-Querformat, Einladungsformular, Hinweistext „klicken Sie auf …") ueber die bestehenden Textknoten, und ein Klick-Nachweis (siehe Beweisprotokoll). Im Handy-Querformat steht die Beschriftung bewusst auch auf Zwischenschritten. Sichtbar ist der Text in Grossbuchstaben (daisyUI `--btn-text-case`). Vorgaenge ohne Ausloeser bleiben unveraendert.
 
-   **Bekannte Luecken (Stand 3.3.1, Code-Analyse 2026-10-07, nicht im Browser getestet):** Das Snippet erkennt den Abschluss-Button nur ueber deutsche/englische Texte in `#submit_form_button`. Nicht umbeschriftet werden (a) der Kopfzeilen-Button `.complete-button` „Abschließen" (erscheint, sobald alle Pflichtfelder ausgefuellt sind, und schliesst den Vorgang ab), (b) der Button im Querformat auf Handys (`alwaysMinimize`, Hoehe < 550 px: „Einreichen" auf jedem Schritt), (c) Formulare in einer anderen Browsersprache (Sprache folgt `Accept-Language`, z. B. fr „Signer et terminer"), (d) das Einladungsformular bei Einladung weiterer Parteien. `patchDisclosure` greift im Hosted-Form nicht, weil dort keine Disclosure-Zeile gerendert wird. Sichtbar ist der Text in Grossbuchstaben (daisyUI `--btn-text-case`). Hintergrund: Embedded Components sind bei selfhosted DocuSeal Pro-only; dieses Override patcht stattdessen die OSS-Hosted-Form. Details: ok_manage-Spec `023-docuseal-signing-slice`.
+8. **Beweisprotokoll** (`overrides/config/okorn/evidence*.rb`, `overrides/config/initializers/zz_okorn_evidence.rb`, `overrides/app/controllers/okorn_button_evidence_controller.rb`) — reiner Beobachter, siehe Abschnitt „Beweisprotokoll".
 
 **Explizit NICHT geaendert** (Lizenz-Compliance, AGPLv3 + Section 7(b) Attribution):
 
@@ -34,6 +34,34 @@ DocuSeal OSS wird unveraendert als Basis-Image verwendet. Die Version ist im Doc
 - Email-Layout (`app/views/layouts/mailer.html.erb`) und Email-Attribution bleiben original.
 
 Resultat: auf jeder Empfaenger-Surface (Start-Form, Submit-Form, Completed, Success) ist der Footer „Erstellt mit DocuSeal" sichtbar — DocuSeal bleibt klar attributiert.
+
+## Beweisprotokoll
+
+Seit 2026-10-13 schreibt das Overlay ein manipulationsevidentes Protokoll mit. Es beobachtet nur (ActiveSupport-Notifications, Mail-Observer) und greift nie in Signatur oder Mailversand ein; Fehler werden geloggt und verschluckt. Abschalten: `OKORN_EVIDENCE=off`.
+
+| Ereignis | Inhalt |
+|---|---|
+| `http.signing_page` | Signaturseite ausgeliefert: Unterzeichner, IP, User-Agent, **ausgelieferte Button-Beschriftung und Ausloeser**, erzwungene Sprache |
+| `http.step_saved`, `http.form_completed` | Formularschritt bzw. Abschluss (mit Beschriftung), IP, User-Agent |
+| `button_click` | Klick-Nachweis aus dem Browser: Text und sichtbarer Text der angeklickten Schaltflaeche, sichtbar/verdeckt, Groesse, Stil, Formularsprache; Vergleich mit der erwarteten Beschriftung |
+| `http.completed_page`, `http.download_links`, `http.file_download`, `http.preview_page` | Abschlussseite, Download-Links, tatsaechlicher Datei-Abruf (Dateiname, SHA-256 aus dem Pruefprotokoll, Zuordnung zum Vorgang), Link aus der Kopie-Mail |
+| `http.resubmit`, `http.copy_email_requested`, `http.decline`, `http.admin_*` | Erneut einreichen, „Kopie per E-Mail senden", Ablehnen, Admin-Aenderungen an Vorgaengen/Unterzeichnern |
+| `mail` / `mail_failed` | jede ausgehende Mail: Empfaenger, Message-ID, Zustellweg (`smtp` mit Server bzw. `test` = **nicht versendet**), Anhaenge mit SHA-256; Unterzeichner-Mails zusaetzlich als `.eml`-Archivkopie (keine Einmalcodes) |
+
+**Ablage:** `/data/docuseal/okorn-evidence/` auf dem persistenten Volume (`evidence-YYYY-MM-DD.jsonl`, Tage in UTC, `chain_head.json`, `mail/…/*.eml`). Jeder Eintrag enthaelt den SHA-256 seines Vorgaengers; Aenderung, Einfuegen oder Loeschen bricht die Kette. Gegen das Neuschreiben der ganzen Kette hilft nur die Auslagerung in schreibgeschuetzten Speicher (unten).
+
+**Pruefen und exportieren** (im DocuSeal-Container, z. B. ueber das Coolify-Terminal):
+
+```bash
+/app/bin/bundle exec rails runner 'puts JSON.pretty_generate(OkornEvidence.verify)'
+/app/bin/bundle exec rails runner 'File.write("/data/docuseal/okorn-export-180.json", JSON.pretty_generate(OkornEvidence.export(submission_id: 180)))'
+```
+
+**Auslagerung (WORM):** `OkornEvidence::Shipper.run` laedt abgeschlossene Tagesdateien und Mail-Archive in einen S3-Bucket mit Object Lock (Standard GOVERNANCE, 6 Jahre, `OKORN_EVIDENCE_LOCK_DAYS`) und legt bei jedem Lauf einen Anker mit dem Kettenkopf ab. Einrichtung: Bucket `okorn-…` mit Object Lock anlegen, Zugang als Coolify-Umgebungsvariablen mit Praefix `OKORN_EVIDENCE_S3_` am DocuSeal-Service, taeglicher Coolify Scheduled Task `/app/bin/bundle exec rails runner 'OkornEvidence::Shipper.run'`. Ohne Konfiguration passiert nichts.
+
+**Grenzen:** Das Protokoll belegt die Uebergabe einer Mail an den Mailserver, nicht den Zugang beim Empfaenger (dafuer Mailserver-Protokoll). Der Klick-Nachweis stammt aus dem Browser des Unterzeichners und ist Selbstauskunft dieses Browsers; zusammen mit der serverseitig protokollierten Beschriftung und den CI-Referenz-Screenshots ergibt sich das Gesamtbild. Programmatische Abschluesse ohne Klick (z. B. Enter in einem Datumsfeld) haben keinen Klick-Nachweis, aber einen `http.form_completed`-Eintrag. Rechtliche Bewertung durch Anwalt; Datenschutzhinweis (IP, User-Agent, Klick-Nachweis, Mail-Archiv, Aufbewahrung) ergaenzen.
+
+**CI-Referenz:** Jeder Build startet das Image in einem Wegwerf-Container, legt synthetische Testdaten an und klickt mit Chromium (Browsersprache fr) die Unterschrift durch, am Desktop und im Handy-Querformat. Screenshots der echten Schaltflaeche und das Beweisprotokoll des Laufs liegen als Artefakt `okorn-smoke-<commit>` 90 Tage an der Action; fuer jede ausgerollte Version herunterladen und archivieren.
 
 ## Build
 
@@ -62,9 +90,10 @@ Beim ersten Push erstellt GHCR das Package als **private**. Damit Coolify ohne P
    - `app/views/submit_form/_docuseal_logo.html.erb`
    - `app/views/templates_share_link_qr/_logo.html.erb`
    - `config/locales/i18n.yml` (Key `powered_by` in `de:`-Section)
-   - `app/views/submit_form/show.html.erb` — **Full-File-Override!** Bei jedem Upstream-Bump: Datei vom neuen Tag frisch ziehen (`gh api "repos/docusealco/docuseal/contents/app/views/submit_form/show.html.erb?ref=<TAG>" --jq .content | base64 -d`) und den `OKorn-Override`-Block vom Dateiende wieder anhaengen.
+   - `app/views/submit_form/show.html.erb` — **Full-File-Override!** Bei jedem Upstream-Bump: Datei vom neuen Tag frisch ziehen (`gh api "repos/docusealco/docuseal/contents/app/views/submit_form/show.html.erb?ref=<TAG>" --jq .content | base64 -d`) und den `OKorn-Override`-Block vom Dateiende wieder anhaengen, dazu die zwei OKorn-Zeilen vor `render 'submit_form/submission_form'` (`okorn_button = …`, `I18n.with_locale(…)`).
+   - Beweisprotokoll: Controller-Namen und Routen-Parameter in `config/okorn/evidence_rails.rb` (`SIGNER_CONTROLLERS`, `describe`) gegen `config/routes.rb` des neuen Tags pruefen, ebenso `SubmitterMailer`-Aktionen (`RAW_MAIL_ACTIONS`). Der CI-Smoke-/Browser-Test muss gruen sein.
    - `app/javascript/submission_form/form.vue` — existiert `#submit_form_button` noch?
-   - `app/javascript/submission_form/i18n.js` — Keys `sign_and_complete` / `complete` unveraendert?
+   - `app/javascript/submission_form/i18n.js` — Keys `sign_and_complete` / `complete` / `submit` (de) unveraendert?
    - `app/javascript/submission_form/signature_step.vue` — Disclosure-Zeile enthaelt weiterhin den `esign-disclosure`-Link?
    - `app/views/pages/landing.html.erb` — **Full-File-Override!** Bei Upstream-Bumps pruefen, ob `shared/logo` noch existiert. Rendert bewusst KEINE Attribution (kein Pflicht-Surface; die vier Empfaenger-Surfaces behalten ihre).
    - `app/views/layouts/_head_tags.html.erb` + `app/views/shared/_meta.html.erb` — kleine Overrides; bei Upstream-Bumps gegen neue Meta-/Title-Logik diffen.

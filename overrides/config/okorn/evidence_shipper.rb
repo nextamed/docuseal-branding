@@ -26,16 +26,23 @@ module OkornEvidence
   module Shipper
     module_function
 
+    # Akzeptiert die Namen, die der Wasabi-Zugang in Coolify anlegt
+    # (Präfix OKORN_EVIDENCE_S3_, z. B. ..._ACCESS_KEY oder ..._ACCESS_KEY_ID).
+    def env(*suffixes)
+      suffixes.map { |suffix| ENV["OKORN_EVIDENCE_S3_#{suffix}"].to_s.strip }.find { |value| !value.empty? }.to_s
+    end
+
     def config
-      bucket = ENV['OKORN_EVIDENCE_S3_BUCKET'].to_s.strip
-      key_id = ENV['OKORN_EVIDENCE_S3_ACCESS_KEY_ID'].to_s.strip
-      secret = ENV['OKORN_EVIDENCE_S3_SECRET_ACCESS_KEY'].to_s.strip
+      bucket = env('BUCKET')
+      key_id = env('ACCESS_KEY_ID', 'ACCESS_KEY', 'KEY_ID', 'KEY')
+      secret = env('SECRET_ACCESS_KEY', 'SECRET_KEY', 'SECRET')
       return if bucket.empty? || key_id.empty? || secret.empty?
 
+      region = env('REGION')
       {
         bucket:,
-        endpoint: ENV['OKORN_EVIDENCE_S3_ENDPOINT'].to_s.strip,
-        region: ENV.fetch('OKORN_EVIDENCE_S3_REGION', 'eu-central-2'),
+        endpoint: env('ENDPOINT', 'URL'),
+        region: region.empty? ? 'eu-central-2' : region,
         access_key_id: key_id,
         secret_access_key: secret,
         prefix: ENV.fetch('OKORN_EVIDENCE_S3_PREFIX', 'sign.okorn.biz/'),
@@ -110,7 +117,9 @@ module OkornEvidence
 
       options = { region: cfg[:region], access_key_id: cfg[:access_key_id],
                   secret_access_key: cfg[:secret_access_key], force_path_style: true }
-      options[:endpoint] = cfg[:endpoint] unless cfg[:endpoint].empty?
+      unless cfg[:endpoint].empty?
+        options[:endpoint] = cfg[:endpoint].match?(%r{\Ahttps?://}) ? cfg[:endpoint] : "https://#{cfg[:endpoint]}"
+      end
 
       Aws::S3::Client.new(**options)
     end

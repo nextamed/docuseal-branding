@@ -100,6 +100,19 @@ Betrieb 2026-10-08: `SendFormCompletedWebhookRequestJob` lief im Abstand
 dem 07.10. gegen 17 Uhr. Ziel-URL und Statuscodes stehen unter Einstellungen >
 Webhooks. Beleg: Container-Logs, Code `send_form_completed_webhook_request_job.rb`.
 
+## Entscheidung · 2026-10-13 · Beweisprotokoll und Klick-Nachweis
+
+Auf Wunsch des Betreibers protokolliert das Overlay als reiner Beobachter
+Signaturseiten (mit ausgelieferter Beschriftung), Abschluss, Downloads mit
+Datei-SHA-256, Mails mit Zustellweg und .eml-Archiv sowie einen
+Klick-Nachweis aus dem Browser (POST /okorn/button_evidence, same-origin).
+Lücken der Buttonlösung geschlossen: Formular bei Zahlungshinweis auf Deutsch,
+Kopfzeilen-Abschluss ausgeblendet, Textknoten-Umbeschriftung inkl.
+„Einreichen". WORM-Auslagerung vorbereitet; Bucket-Anlage wurde in der
+Sitzung nicht freigegeben und steht aus. Beleg: Ruby-/JS-Tests, CI-Smoke-
+und Browser-Test im Wegwerf-Container. Nicht in Produktion ausgerollt; vor
+jedem Redeploy Container-Logs für laufende Streitfälle sichern.
+
 ## Offene Nachweise
 
 Rails-Integration, visuelle Empfängeroberflächen und Wiederherstellung bei einem
